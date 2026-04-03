@@ -1,98 +1,34 @@
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Code Crawler - Admin Login</title>
-    <style>
-      body {
-        margin: 0;
-        font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell,
-          Noto Sans, sans-serif;
-        background: #050816;
-        color: white;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 100vh;
-      }
-      .card {
-        width: 420px;
-        background: #111827;
-        border: 1px solid #1f2937;
-        border-radius: 14px;
-        padding: 18px;
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
-      }
-      h1 {
-        font-size: 18px;
-        margin: 0 0 12px 0;
-        font-weight: 700;
-        color: #22c55e;
-      }
-      .field {
-        margin-top: 12px;
-      }
-      label {
-        display: block;
-        font-size: 12px;
-        color: #9ca3af;
-        margin-bottom: 6px;
-      }
-      input {
-        width: 100%;
-        padding: 10px 12px;
-        border-radius: 10px;
-        border: 1px solid #1f2937;
-        background: #0b1220;
-        color: white;
-        outline: none;
-      }
-      button {
-        margin-top: 16px;
-        width: 100%;
-        padding: 10px 12px;
-        border-radius: 10px;
-        border: none;
-        background: #22c55e;
-        color: #052e16;
-        font-weight: 700;
-        cursor: pointer;
-      }
-      .error {
-        margin-top: 10px;
-        padding: 10px 12px;
-        border-radius: 10px;
-        background: rgba(239, 68, 68, 0.12);
-        border: 1px solid rgba(239, 68, 68, 0.35);
-        color: #fecaca;
-        font-size: 13px;
-      }
-      .hint {
-        margin-top: 10px;
-        font-size: 12px;
-        color: #9ca3af;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="card">
-      <h1>Admin Portal</h1>
-      <div class="hint">Create tenants and users for tenant-isolated logins.</div>
-      <form method="post" action="/admin/login">
-        <div class="field">
-          <label>Admin username</label>
-          <input name="username" autocomplete="username" />
-        </div>
-        <div class="field">
-          <label>Admin password</label>
-          <input name="password" type="password" autocomplete="current-password" />
-        </div>
-        <button type="submit">Login</button>
-      </form>
-      {% if error %}
-        <div class="error">{{ error }}</div>
-      {% endif %}
-    </div>
-  </body>
-</html>
+{% extends "base.html" %}
+{% block title %}Code Crawler - Admin Login{% endblock %}
 
+{% block body %}
+<div class="center-page">
+  <div class="card center-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <span style="font-size:18px;font-weight:700;color:var(--green);">Admin Portal</span>
+    </div>
+    <p style="font-size:13px;color:var(--text-dim);margin-bottom:18px;">Manage tenants and users for Code Crawler.</p>
+
+    <form method="post" action="/admin/login">
+      <div class="field">
+        <label for="username">Admin username</label>
+        <input id="username" name="username" autocomplete="username" required />
+      </div>
+      <div class="field">
+        <label for="password">Admin password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required />
+      </div>
+      <button class="btn btn-green" type="submit">Sign in</button>
+    </form>
+
+    {% if error %}
+      <div class="alert-error">{{ error }}</div>
+    {% endif %}
+
+    <p style="text-align:center;margin-top:16px;font-size:12px;color:var(--text-dim);">
+      <a href="/login">Back to user login</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

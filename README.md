@@ -1,199 +1,190 @@
-## Code Crawler (FastAPI + Temporal)
+# Code Crawler
 
-This is a fresh implementation of your **code-crawler**:
-
-- **FastAPI** HTTP API to trigger ingestion
-- **Temporal** workflow + activities for durable ingestion
-- **GitPython + AST** to crawl Python code and build lineage
-
-It:
-
-- Clones a Git repo
-- Walks all `.py` files
-- Parses via Python `ast`
-- Extracts functions, classes, imports, calls
-- Builds a function-level lineage graph:
-  - each function = node
-  - each function call = directed edge
-- Stores JSON as:
-
-```json
-{
-  "nodes": [],
-  "edges": []
-}
-```
+A multi-tenant web app that clones Python GitHub repositories, parses them using Python's `ast` module, and builds function-level lineage graphs (function = node, function call = directed edge). Built with FastAPI, Temporal, PostgreSQL (SQLAlchemy ORM), and Alembic.
 
 ---
 
-### Project layout
+## Prerequisites
 
-- `requirements.txt` – FastAPI, Temporal, GitPython
-- `app/`
-  - `main.py` – FastAPI app with `/ingest` endpoint
-  - `repo_crawler.py` – clones/refreshes Git repos (retry-safe)
-  - `python_ast_parser.py` – AST parsing to an intermediate model
-  - `lineage_builder.py` – builds lineage graph and writes JSON
-  - `activities.py` – Temporal activities:
-    - `clone_repo_activity`
-    - `parse_repo_activity`
-    - `build_lineage_activity`
-  - `workflow.py` – `CodeCrawlerWorkflow` + `TASK_QUEUE`
-- `worker.py` – Temporal worker process
-- `run_connector.py` – CLI to fire the workflow without HTTP
+You need these installed on your machine before starting:
+
+| Tool | What it does | Install (macOS) |
+|------|-------------|-----------------|
+| **Python 3.11+** | Runs the app | `brew install python@3.11` |
+| **PostgreSQL** | Stores all data | `brew install postgresql@17` |
+| **Temporal CLI** | Durable workflow engine | `brew install temporal` |
+| **Git** | Clones repos to analyze | Pre-installed on macOS |
+
+> **Windows/Linux?** Use your OS package manager instead of `brew`. The rest of the steps are the same.
 
 ---
 
-### 1. Install dependencies (Python 3.11+ recommended)
+## Step-by-Step Setup
 
-From the project root:
+### 1. Clone the repo
 
 ```bash
-cd ~/Desktop/code-crawler
+git clone <your-repo-url> code-crawler
+cd code-crawler
+```
 
-python3.11 -m venv .venv          # or python -m venv .venv if 3.11 is default
+### 2. Create a Python virtual environment and install dependencies
+
+```bash
+python3.11 -m venv .venv
 source .venv/bin/activate
+```
 
-pip install --upgrade pip
+Install packages (pick one):
+
+```bash
+# Using pip
 pip install -r requirements.txt
+
+# OR using uv (faster)
+uv pip install -r requirements.txt
 ```
 
-If you see missing packages later (`temporalio`, `git`), re-run:
+> **Corporate network / SSL errors?** If you see `invalid peer certificate` errors, you likely need to point to your company's CA cert:
+> ```bash
+> # For pip
+> export REQUESTS_CA_BUNDLE="/path/to/your/ca-cert.pem"
+>
+> # For uv
+> export SSL_CERT_FILE="/path/to/your/ca-cert.pem"
+> ```
+
+### 3. Set up PostgreSQL
+
+**Start PostgreSQL** (if not already running):
 
 ```bash
-pip install -r requirements.txt
+brew services start postgresql@17
 ```
 
----
+**Create the database user and database:**
 
-### 1.5 Configure Postgres
-The app writes lineage nodes into Postgres and reads them back for the UI.
-
-Set `POSTGRES_DSN` (defaults to `postgresql://postgres:postgres@localhost:5432/code_crawler`):
 ```bash
-export POSTGRES_DSN="postgresql://<user>:<password>@localhost:5432/code_crawler"
+# Create the 'postgres' superuser role (Homebrew doesn't create it by default)
+createuser -s postgres
+
+# Set a password for it
+psql -U postgres -c "ALTER USER postgres PASSWORD 'postgres';"
+
+# Create the database
+createdb -U postgres code_crawler
 ```
 
-On startup (FastAPI) and inside the Temporal activity, the required table is created automatically (`lineage_nodes`).
+> **Verify it works:**
+> ```bash
+> psql -U postgres -d code_crawler -c "SELECT 1;"
+> ```
+> You should see a table with `1` in it. If you get a connection error, make sure PostgreSQL is running (`brew services list`).
 
-### Tenant setup (multi-company)
-The DB is now tenant-aware using a `tenants` table and a `tenant_id` column on `lineage_nodes`.
+**Custom connection string?** Set the `POSTGRES_DSN` env var:
 
-- Default tenant id: `default` (env `DEFAULT_TENANT_ID` to change)
-- Data isolation is done server-side by always using the logged-in user's `tenant_id`.
-- For multi-company support you should create tenants in `tenants`, and users in `users` linked to the right `tenant_id`.
-- The website endpoints are:
-  - `GET /login`
-  - `GET /dashboard`
-  - `POST /crawl` (triggers Temporal ingestion for the logged-in user's tenant)
-  - `GET /lineage-ui`, `GET /asset` (views lineage for the logged-in user's tenant)
-
-#### User table (login)
-The `users` table is created automatically on startup with:
-- `username` (unique)
-- `password_hash` (bcrypt hash)
-- `tenant_id` (FK -> `tenants.tenant_id`)
-
-Since you create users manually for now:
-1. Ensure the tenant exists in `tenants` (or use the seeded `default` tenant).
-2. Insert the bcrypt hash into `users.password_hash`.
-
-Generate a bcrypt hash like this:
 ```bash
-python -c "from passlib.context import CryptContext; print(CryptContext(schemes=['bcrypt'], deprecated='auto').hash('YOUR_PASSWORD'))"
+export POSTGRES_DSN="postgresql://myuser:mypassword@localhost:5432/code_crawler"
 ```
 
-#### Admin portal (create tenants/users easily)
-The app also includes an admin UI so you can create `tenants` and login `users` without manually generating bcrypt hashes.
+Default is `postgresql://postgres:postgres@localhost:5432/code_crawler`.
 
-- Admin login page: `GET /admin/login`
-- Admin dashboard: `GET /admin`
+### 4. Run database migrations
 
-Default admin credentials (override via env vars):
-- `ADMIN_USERNAME` (default: `admin`)
-- `ADMIN_PASSWORD` (default: `admin123`)
+This creates all the tables (`tenants`, `users`, `lineage_nodes`, `admin_accounts`) with proper constraints:
 
----
+```bash
+alembic upgrade head
+```
 
-### 2. Start Temporal locally
+You should see output like:
 
-You need a Temporal server reachable at `localhost:7233`.
+```
+INFO  [alembic.runtime.migration] Running upgrade  -> 001, initial schema
+INFO  [alembic.runtime.migration] Running upgrade 001 -> 002, add handle constraints to tenants
+```
 
-In a separate terminal (no venv required, but fine if you use one):
+### 5. Start Temporal dev server
+
+Open a **new terminal** (no venv needed):
 
 ```bash
 temporal server start-dev
 ```
 
-Leave this running.
+This starts Temporal at `localhost:7233` with a web UI at `http://localhost:8233`. Leave it running.
 
----
+### 6. Start the Temporal worker
 
-### 3. Start the Temporal worker
-
-In another terminal with your venv activated:
+Open a **new terminal**, activate the venv, and run:
 
 ```bash
-cd ~/Desktop/code-crawler
+cd code-crawler
 source .venv/bin/activate
-
 python worker.py
 ```
 
-This:
+You should see:
 
-- Connects to Temporal at `localhost:7233`
-- Registers:
-  - `CodeCrawlerWorkflow`
-  - `clone_repo_activity`
-  - `parse_repo_activity`
-  - `build_lineage_activity`
-- Listens on task queue: `code-crawler-task-queue`
+```
+INFO:__main__:Starting Temporal worker on task queue code-crawler-task-queue
+```
 
-Keep this process running.
+Leave it running.
 
----
+### 7. Start the FastAPI server
 
-### 4. Run the FastAPI app
-
-In a third terminal (venv active):
+Open a **new terminal**, activate the venv, and run:
 
 ```bash
-cd ~/Desktop/code-crawler
+cd code-crawler
 source .venv/bin/activate
-
 uvicorn app.main:app --reload --port 8000
 ```
 
-This starts FastAPI at `http://localhost:8000`.
+The app is now live at **http://localhost:8000**.
 
 ---
 
-### 5. Trigger ingestion via HTTP
+## Using the App
 
-Use `curl`, HTTPie, or your browser (Swagger UI).
+### Sign up
 
-- **Swagger UI**:
+1. Go to http://localhost:8000/signup
+2. Pick **Personal** or **Organization**
+3. Choose a handle (this becomes your public URL: `localhost:8000/your-handle`)
+4. Fill in display name, email, and password
+5. Click **Create account** — you'll land on the dashboard
 
-Open:
+### Crawl a repo
 
-```text
-http://localhost:8000/docs
+1. On the dashboard, paste a public GitHub repo URL (e.g., `https://github.com/pallets/flask.git`)
+2. Pick a branch (default: `main`)
+3. Click **Crawl & Build Lineage**
+4. Wait for the workflow to complete — it clones the repo, parses all Python files, and builds the lineage graph
+5. Click the repo in "Your lineage" to visualize the function call graph
+
+### Public profile
+
+Visit `http://localhost:8000/{your-handle}` to see your public profile with all crawled repos.
+
+### Admin portal
+
+For managing tenants and users directly:
+
+1. Go to http://localhost:8000/admin/login
+2. Default credentials: `admin` / `admin123`
+3. Create tenants, assign users, view account types
+
+### CLI alternative
+
+If you just want to trigger a crawl without the web UI (Temporal + worker must be running):
+
+```bash
+python run_connector.py --repo https://github.com/pallets/flask.git --branch main --tenant your-handle
 ```
 
-Use the `POST /ingest` endpoint with body:
-
-```json
-{
-  "github_repo_url": "https://github.com/org/repo.git",
-  "branch": "main",
-  "language": "python",
-  "tenant_id": "default",
-  "output_path": null
-}
-```
-
-- **curl example**:
+### API
 
 ```bash
 curl -X POST http://localhost:8000/ingest \
@@ -202,55 +193,132 @@ curl -X POST http://localhost:8000/ingest \
     "github_repo_url": "https://github.com/pallets/flask.git",
     "branch": "main",
     "language": "python",
-    "tenant_id": "default"
+    "tenant_id": "your-handle"
   }'
 ```
 
-Response:
+---
 
-```json
-{
-  "workflow_id": "code-crawler-default-main-flask.git",
-  "run_id": "..."
-}
-```
+## Environment Variables
 
-The actual lineage building happens in the Temporal workflow, and each function asset is persisted in Postgres.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `POSTGRES_DSN` | `postgresql://postgres:postgres@localhost:5432/code_crawler` | Database connection string |
+| `ADMIN_USERNAME` | `admin` | Admin portal login |
+| `ADMIN_PASSWORD` | `admin123` | Admin portal password |
+| `SESSION_SECRET_KEY` | `dev-change-me` | Secret for signing session cookies (change in production) |
+| `DEFAULT_TENANT_ID` | `default` | Tenant seeded on first startup |
+| `DEFAULT_TENANT_NAME` | `Default` | Display name for the default tenant |
 
 ---
 
-### 6. Trigger ingestion via CLI (optional)
+## Project Structure
 
-Instead of HTTP, you can run the workflow directly:
+```
+code-crawler/
+├── app/
+│   ├── main.py                 # FastAPI app factory + lifespan
+│   ├── workflow.py             # Temporal workflow (3 sequential activities)
+│   ├── activities.py           # Temporal activity implementations
+│   ├── models/                 # SQLAlchemy ORM models
+│   │   ├── base.py             #   DeclarativeBase
+│   │   ├── tenant.py           #   Tenant (with account_type)
+│   │   ├── user.py             #   User (with bcrypt password)
+│   │   ├── lineage_node.py     #   LineageNode (JSONB upstream_ids)
+│   │   └── admin_account.py    #   AdminAccount
+│   ├── db/                     # Database session management
+│   │   └── session.py          #   async engine, get_session, get_session_context
+│   ├── repositories/           # Data access layer
+│   │   ├── tenant_repo.py      #   Tenant CRUD + handle existence check
+│   │   ├── user_repo.py        #   User CRUD + password verification
+│   │   ├── lineage_repo.py     #   Bulk lineage insert + queries
+│   │   └── admin_repo.py       #   Admin CRUD
+│   ├── services/               # Business logic
+│   │   └── signup_service.py   #   Handle validation + atomic signup
+│   ├── routes/                 # FastAPI routers (registered in order)
+│   │   ├── auth.py             #   /login, /logout, /signup, /check-handle
+│   │   ├── dashboard.py        #   /dashboard, /crawl, /lineage-ui, /asset
+│   │   ├── admin.py            #   /admin/* (manage tenants/users)
+│   │   ├── ingest.py           #   POST /ingest (API)
+│   │   └── profile.py          #   /{handle} (public profile, registered LAST)
+│   ├── python_ast_parser.py    # AST visitor for Python files
+│   ├── lineage_builder.py      # Resolves call edges into lineage graph
+│   └── repo_crawler.py         # Git clone/refresh with retries
+├── alembic/                    # Database migrations
+│   ├── env.py                  #   Async Alembic config
+│   └── versions/
+│       ├── 001_initial_schema.py
+│       └── 002_handle_constraints.py
+├── templates/                  # Jinja2 HTML templates
+│   ├── base.html               #   Shared layout + dark theme CSS
+│   ├── signup.html             #   Self-service signup with live handle check
+│   ├── login.html              #   User login
+│   ├── dashboard.html          #   Crawl repos + view lineage list
+│   ├── profile.html            #   Public profile at /{handle}
+│   ├── lineage.html            #   Lineage graph visualization
+│   ├── asset.html              #   Single function/asset detail
+│   ├── admin_login.html        #   Admin login
+│   └── admin_dashboard.html    #   Admin tenant/user management
+├── worker.py                   # Temporal worker entrypoint
+├── run_connector.py            # CLI to trigger workflow
+├── alembic.ini                 # Alembic config
+├── requirements.txt            # Python dependencies
+└── CLAUDE.md                   # AI assistant instructions
+```
 
+---
+
+## How It Works
+
+1. **Signup** — User picks a handle (e.g., `acme-corp`), creating a tenant + user in one transaction
+2. **Crawl** — User pastes a GitHub URL; FastAPI starts a Temporal workflow
+3. **Clone** — `clone_repo_activity` clones the repo via GitPython
+4. **Parse** — `parse_repo_activity` walks all `.py` files and extracts functions, classes, imports, and calls using Python's `ast` module
+5. **Build lineage** — `build_lineage_activity` resolves call expressions to function IDs and stores the lineage graph in PostgreSQL
+6. **Visualize** — The web UI renders an interactive lineage graph showing which functions call which
+
+---
+
+## Troubleshooting
+
+**`psql: error: connection refused`**
+PostgreSQL isn't running. Start it:
 ```bash
-cd ~/Desktop/code-crawler
+brew services start postgresql@17
+```
+
+**`alembic: command not found`**
+Make sure your venv is active:
+```bash
 source .venv/bin/activate
-
-python run_connector.py --repo https://github.com/pallets/flask.git --branch main
 ```
 
-This prints:
-
-```text
-Lineage stored in Postgres for repo/branch.
-Assets: <N>
+**`temporal: command not found`**
+Install the Temporal CLI:
+```bash
+brew install temporal
 ```
 
-Note: `--output` is now effectively ignored; lineage is persisted in Postgres.
+**`connection refused` on port 7233**
+Temporal server isn't running. Start it in a separate terminal:
+```bash
+temporal server start-dev
+```
 
-
+**SSL certificate errors when installing packages**
+See the SSL note in Step 2 above. Set `REQUESTS_CA_BUNDLE` (pip) or `SSL_CERT_FILE` (uv) to your corporate CA cert path.
 
 ---
 
-### 7. Private GitHub repos
+## Private GitHub Repos
 
-This project intentionally does **not** depend on Atlan’s SecretStore. For private repos:
+For private repos, you have two options:
 
-- **SSH approach**: ensure you can `git clone git@github.com:org/private-repo.git` from this machine.re
-- **Token over HTTPS**:
-  - Export a token in your shell (e.g. `GITHUB_TOKEN`).
-  - Update `repo_crawler.clone_repository` to build an authenticated HTTPS URL using that token (we can wire that in next if you want).
+- **SSH**: Ensure `git clone git@github.com:org/private-repo.git` works from your machine
+- **HTTPS token**: Export `GITHUB_TOKEN` and modify `repo_crawler.py` to build an authenticated URL
 
-The Temporal logic does not need to change—only how we construct the repo URL.
+---
 
+## Only Python
+
+The parser only supports Python files (via the `ast` module). The `language` parameter exists but rejects anything other than `"python"`.

@@ -16,6 +16,8 @@ class FunctionDefInfo:
     lineno: int
     col_offset: int
     class_name: Optional[str] = None
+    end_lineno: Optional[int] = None
+    source: Optional[str] = None
 
 
 @dataclass
@@ -67,9 +69,10 @@ def _module_name_from_path(root: str, file_path: str) -> str:
 
 
 class _AstVisitor(ast.NodeVisitor):
-    def __init__(self, module: str, path: str):
+    def __init__(self, module: str, path: str, source_text: str = ""):
         self.module = module
         self.path = path
+        self._source_lines = source_text.splitlines()
         self.result = FileParseResult(module=module, path=path)
         self._scope_stack: List[str] = []
         self._current_class: Optional[str] = None
@@ -146,6 +149,8 @@ class _AstVisitor(ast.NodeVisitor):
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         qualname = self._current_qualname(node.name)
         func_id = self._current_function_id(node.name)
+        end_lineno = getattr(node, "end_lineno", None) or node.lineno
+        source = "\n".join(self._source_lines[node.lineno - 1 : end_lineno])
         self.result.functions.append(
             FunctionDefInfo(
                 id=func_id,
@@ -155,6 +160,8 @@ class _AstVisitor(ast.NodeVisitor):
                 lineno=node.lineno,
                 col_offset=node.col_offset,
                 class_name=self._current_class,
+                end_lineno=end_lineno,
+                source=source,
             )
         )
         self._scope_stack.append(node.name)
@@ -200,7 +207,7 @@ def parse_python_file(root: str, file_path: str) -> Optional[FileParseResult]:
         return None
 
     module = _module_name_from_path(root, file_path)
-    visitor = _AstVisitor(module=module, path=os.path.relpath(file_path, root))
+    visitor = _AstVisitor(module=module, path=os.path.relpath(file_path, root), source_text=source)
     visitor.visit(tree)
     return visitor.result
 

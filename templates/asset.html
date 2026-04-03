@@ -1,329 +1,1599 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8"/>
-<title>Asset Lineage Graph</title>
+{% extends "base.html" %}
+{% block title %}Asset Lineage{% endblock %}
 
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;600&display=swap" rel="stylesheet"/>
+{% block extra_style %}
+  /* ── Canvas viewport ── */
+  .graph-viewport {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    min-height: calc(100vh - 104px);
+    cursor: grab;
+    user-select: none;
+    background:
+      radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0);
+    background-size: 24px 24px;
+  }
+  .graph-viewport.panning { cursor: grabbing; }
 
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
+  .graph-plane {
+    position: absolute;
+    top: 0; left: 0;
+    min-width: 100%;
+    min-height: 100%;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 48px 40px;
+    gap: 0;
+    transform-origin: 0 0;
+    transition: transform 0.08s ease-out;
+  }
 
-body{
-  font-family:'Inter',system-ui;
-  background:hsl(230,84%,5%);
-  color:hsl(210,40%,92%);
-  height:100vh;
-  display:flex;
-  flex-direction:column;
-}
+  /* ── Info bar ── */
+  .info-bar {
+    padding: 8px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: rgba(17, 24, 39, 0.5);
+    backdrop-filter: blur(8px);
+    font-size: 13px;
+  }
+  .info-bar .ib-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+    color: var(--blue);
+  }
+  .info-bar .ib-sep { color: var(--border); }
+  .info-bar .ib-stat {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+  }
+  .info-bar .ib-stat.up { color: var(--cyan); }
+  .info-bar .ib-stat.down { color: var(--purple); }
+  .info-bar .ib-file {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    flex-shrink: 1;
+  }
+  .info-bar .ib-spacer { flex: 1; }
+  .ib-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .ib-btn:hover { border-color: var(--text-dim); color: var(--text); }
 
-.header{
-  padding:16px 24px;
-  border-bottom:1px solid hsl(224,20%,18%);
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-}
+  /* ── Zoom controls ── */
+  .zoom-controls {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    z-index: 100;
+  }
+  .zoom-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .zoom-btn:first-child { border-radius: 8px 8px 0 0; }
+  .zoom-btn:last-child  { border-radius: 0 0 8px 8px; }
+  .zoom-btn:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+  .zoom-label {
+    font-size: 9px;
+    color: var(--text-dim);
+    text-align: center;
+    margin-top: 4px;
+    font-family: 'JetBrains Mono', monospace;
+  }
 
-#search{
-  background:hsl(224,50%,8%);
-  border:1px solid hsl(224,20%,18%);
-  padding:8px 12px;
-  border-radius:8px;
-  color:white;
-  width:300px;
-  font-family:'JetBrains Mono',monospace;
-}
+  /* ── SVG lines ── */
+  .graph-svg {
+    position: absolute;
+    top: 0; left: 0;
+    pointer-events: none;   /* SVG background is click-through; only hit paths catch events */
+    z-index: 10;
+  }
+  .graph-svg path {
+    fill: none;
+    stroke-width: 1.5;
+    stroke-dasharray: 6 4;
+    animation: flowDash 0.8s linear infinite;
+  }
+  .graph-svg path.line-up {
+    stroke: var(--cyan);
+    opacity: 0.4;
+    animation-direction: reverse;
+  }
+  .graph-svg path.line-down {
+    stroke: var(--purple);
+    opacity: 0.4;
+  }
+  @keyframes flowDash {
+    to { stroke-dashoffset: -10; }
+  }
+  .graph-svg circle.dot-up   { fill: var(--cyan);   opacity: 0.7; }
+  .graph-svg circle.dot-down { fill: var(--purple); opacity: 0.7; }
+  .graph-svg path.dimmed   { opacity: 0.04 !important; animation: none !important; }
+  .graph-svg circle.dimmed { opacity: 0.04 !important; }
+  .graph-svg path.highlighted   { opacity: 1 !important; stroke-width: 2.5px !important; animation: none !important; filter: drop-shadow(0 0 4px currentColor); }
+  .graph-svg circle.highlighted { opacity: 1 !important; r: 5px; }
+  .graph-svg path.line-hit { stroke: rgba(0,0,0,0.001); stroke-width: 14px; fill: none; cursor: pointer; pointer-events: stroke; }
 
-#search-results{
-  position:absolute;
-  top:70px;
-  right:24px;
-  width:300px;
-  background:hsl(224,50%,8%);
-  border:1px solid hsl(224,20%,18%);
-  border-radius:8px;
-  max-height:300px;
-  overflow-y:auto;
-  display:none;
-  z-index:10;
-}
+  /* ── Columns ── */
+  .graph-col {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex-shrink: 0;
+    width: 260px;
+    z-index: 2;
+    position: relative;
+  }
+  .graph-col.col-center {
+    width: 320px;
+    align-items: center;
+    justify-content: center;
+  }
+  .col-gap { width: 80px; flex-shrink: 0; }
 
-.search-item{
-  padding:10px;
-  cursor:pointer;
-  font-size:13px;
-}
+  .col-label {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    text-align: center;
+    margin-bottom: 6px;
+    align-self: center;
+  }
+  .col-label.upstream   { color: var(--cyan);   background: rgba(6,182,212,0.08);  border: 1px solid rgba(6,182,212,0.15); }
+  .col-label.downstream { color: var(--purple); background: rgba(168,85,247,0.08); border: 1px solid rgba(168,85,247,0.15); }
 
-.search-item:hover{
-  background:hsl(217,91%,60%,0.15);
-}
+  /* ── Side node cards ── */
+  .node {
+    background: hsl(224, 50%, 8%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    transition: all 0.18s;
+    cursor: pointer;
+    animation: nodeIn 0.3s ease;
+    position: relative;
+  }
+  .node.dimmed { opacity: 0.25; }
+  .node.selected { box-shadow: 0 0 0 2px var(--blue), 0 4px 20px rgba(59,130,246,0.2); }
+  @keyframes nodeIn {
+    from { opacity: 0; transform: translateY(6px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .node:hover { transform: translateY(-2px); }
+  .node.upstream {
+    border-left: 3px solid var(--cyan);
+  }
+  .node.upstream:hover {
+    border-color: var(--cyan);
+    box-shadow: 0 4px 20px rgba(6,182,212,0.15), inset 0 0 0 1px rgba(6,182,212,0.08);
+  }
+  .node.downstream {
+    border-left: 3px solid var(--purple);
+  }
+  .node.downstream:hover {
+    border-color: var(--purple);
+    box-shadow: 0 4px 20px rgba(168,85,247,0.15), inset 0 0 0 1px rgba(168,85,247,0.08);
+  }
 
-#lineage-wrapper{
-  flex:1;
-  position:relative;
-  overflow:auto;
-}
+  .node .n-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .node .n-module {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .node .n-file {
+    font-size: 9px;
+    color: hsl(215,20%,40%);
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .node .n-counts {
+    font-size: 9px;
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 4px;
+    display: flex;
+    gap: 10px;
+  }
+  .node .n-counts .cnt-up   { color: var(--cyan);   opacity: 0.7; }
+  .node .n-counts .cnt-down { color: var(--purple); opacity: 0.7; }
+  .node .n-counts .cnt-zero { color: var(--text-dim); opacity: 0.3; }
 
-#lineage{
-  display:flex;
-  align-items:flex-start;
-  padding:40px;
-  gap:120px;
-  position:relative;
-}
+  /* ── Expand buttons on side nodes ── */
+  .node-expand {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    border: 1.5px solid var(--border);
+    background: var(--bg);
+    cursor: pointer;
+    transition: all 0.15s;
+    z-index: 5;
+  }
+  .node-expand:hover { transform: translateY(-50%) scale(1.2); }
+  .node-expand.left  { left: -13px; color: var(--cyan); border-color: rgba(6,182,212,0.4); }
+  .node-expand.left:hover  { background: rgba(6,182,212,0.12); box-shadow: 0 0 10px rgba(6,182,212,0.3); }
+  .node-expand.right { right: -13px; color: var(--purple); border-color: rgba(168,85,247,0.4); }
+  .node-expand.right:hover { background: rgba(168,85,247,0.12); box-shadow: 0 0 10px rgba(168,85,247,0.3); }
+  .node-expand.active { background: rgba(255,255,255,0.06); border-style: solid; }
+  .node-expand .pip {
+    position: absolute;
+    top: -4px; right: -4px;
+    font-size: 8px; font-weight: 700;
+    background: var(--bg);
+    border: 1px solid;
+    border-radius: 6px;
+    padding: 0 4px;
+    line-height: 14px;
+  }
+  .node-expand.left  .pip { border-color: var(--cyan);   color: var(--cyan); }
+  .node-expand.right .pip { border-color: var(--purple); color: var(--purple); }
 
-.node-column{
-  display:flex;
-  flex-direction:column;
-  gap:30px;
-  min-width:260px;
-}
+  /* ── Center node ── */
+  .center-node {
+    background: linear-gradient(135deg, rgba(59,130,246,0.06) 0%, var(--surface) 100%);
+    border: 2px solid var(--blue);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    text-align: center;
+    position: relative;
+    box-shadow: 0 0 40px -10px rgba(59,130,246,0.3), 0 0 0 1px rgba(59,130,246,0.08);
+    cursor: default;
+    width: 100%;
+  }
+  .center-node .cn-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--blue);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .center-node .cn-module {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .center-node .cn-file {
+    font-size: 10px;
+    color: hsl(215,20%,50%);
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .center-node .cn-badge {
+    display: inline-flex;
+    gap: 12px;
+    margin-top: 10px;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .center-node .cn-badge .b-up { color: var(--cyan); }
+  .center-node .cn-badge .b-down { color: var(--purple); }
+  .center-node .cn-badge .b-zero { color: var(--text-dim); opacity: 0.4; }
 
-.card{
-  background:hsl(224,50%,8%);
-  border:1px solid hsl(224,20%,18%);
-  border-radius:12px;
-  padding:16px;
-  cursor:pointer;
-  transition:.2s;
-  position:relative;
-}
+  /* ── Center expand buttons ── */
+  .c-expand {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--border);
+    background: var(--bg);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-size: 14px;
+    z-index: 10;
+  }
+  .c-expand:hover { transform: translateY(-50%) scale(1.15); }
+  .c-expand.left  { left: -17px; border-color: var(--cyan); color: var(--cyan); }
+  .c-expand.left:hover  { background: rgba(6,182,212,0.12); box-shadow: 0 0 12px rgba(6,182,212,0.35); }
+  .c-expand.right { right: -17px; border-color: var(--purple); color: var(--purple); }
+  .c-expand.right:hover { background: rgba(168,85,247,0.12); box-shadow: 0 0 12px rgba(168,85,247,0.35); }
+  .c-expand.active { background: rgba(255,255,255,0.05); }
+  .c-expand .pip {
+    position: absolute;
+    top: -5px; right: -5px;
+    background: var(--surface);
+    border: 1.5px solid;
+    border-radius: 8px;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 0 5px;
+    line-height: 16px;
+  }
+  .c-expand.left  .pip { border-color: var(--cyan);   color: var(--cyan); }
+  .c-expand.right .pip { border-color: var(--purple); color: var(--purple); }
 
-.card:hover{
-  border-color:hsl(217,91%,60%);
-  box-shadow:0 0 20px -5px hsl(217,91%,60%,0.3);
-}
+  /* ── "Show more" pill in columns ── */
+  .col-more {
+    text-align: center;
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-dim);
+    padding: 6px 14px;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .col-more:hover {
+    border-color: var(--text-dim);
+    color: var(--text);
+    background: rgba(255,255,255,0.03);
+  }
 
-.title{
-  font-family:'JetBrains Mono',monospace;
-  font-size:13px;
-  font-weight:600;
-}
+  /* ── Sidebar panel ── */
+  .sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.35);
+    z-index: 500;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .sidebar-overlay.open { display: block; opacity: 1; }
 
-.meta{
-  font-size:11px;
-  color:hsl(215,20%,55%);
-  margin-top:4px;
-}
+  .sidebar {
+    position: fixed;
+    top: 0; right: 0;
+    width: min(580px, 90vw);
+    height: 100vh;
+    background: var(--bg);
+    border-left: 1px solid var(--border);
+    z-index: 600;
+    display: flex;
+    flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    box-shadow: -8px 0 32px rgba(0,0,0,0.5);
+  }
+  .sidebar.open { transform: translateX(0); }
 
-svg{
-  position:absolute;
-  top:0;
-  left:0;
-  pointer-events:none;
-}
-</style>
-</head>
+  .sb-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .sb-header .sb-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--blue);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .sb-close {
+    width: 28px; height: 28px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+  .sb-close:hover { border-color: var(--text-dim); color: var(--text); }
 
-<body>
+  .sb-meta {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex-shrink: 0;
+    background: rgba(17,24,39,0.3);
+  }
+  .sb-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sb-meta-label {
+    color: var(--text-dim);
+    min-width: 70px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .sb-meta-value {
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .sb-meta-value.up   { color: var(--cyan); }
+  .sb-meta-value.down { color: var(--purple); }
 
-<div class="header">
-  <h3>Asset Lineage Graph</h3>
-  <input id="search" placeholder="Search asset..."/>
+  .sb-nav-btn {
+    margin-top: 4px;
+    padding: 5px 12px;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--blue);
+    cursor: pointer;
+    transition: all 0.15s;
+    align-self: flex-start;
+  }
+  .sb-nav-btn:hover { border-color: var(--blue); background: rgba(59,130,246,0.06); }
+
+  .sb-code-header {
+    padding: 8px 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .sb-code-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    flex: 1;
+  }
+  .sb-code-btn {
+    padding: 3px 10px;
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .sb-code-btn:hover { border-color: var(--text-dim); color: var(--text); }
+  .sb-code-btn.active { border-color: var(--blue); color: var(--blue); }
+
+  .sb-code-wrap {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+  }
+  /* ── Editor: gutter + code side by side ── */
+  .sb-editor {
+    display: flex;
+    height: 100%;
+    overflow: auto;
+  }
+  .sb-gutter {
+    flex-shrink: 0;
+    padding: 16px 10px 16px 14px;
+    text-align: right;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #858585;
+    user-select: none;
+    border-right: 1px solid var(--border);
+    background: rgba(17,24,39,0.4);
+    position: sticky;
+    left: 0;
+  }
+  .sb-gutter div { white-space: nowrap; }
+  .sb-code-pre {
+    margin: 0;
+    padding: 16px 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #d4d4d4;
+    white-space: pre;
+    tab-size: 4;
+    flex: 1;
+    min-width: 0;
+    outline: none;
+  }
+  .sb-code-pre[contenteditable] {
+    border-left: 2px solid var(--blue);
+    caret-color: #fff;
+  }
+  /* ── Syntax colors (VS Code Dark+ inspired) ── */
+  .hl-kw  { color: #c586c0; }
+  .hl-cf  { color: #c586c0; }
+  .hl-bi  { color: #dcdcaa; }
+  .hl-fn  { color: #dcdcaa; }
+  .hl-str { color: #ce9178; }
+  .hl-cm  { color: #6a9955; font-style: italic; }
+  .hl-num { color: #b5cea8; }
+  .hl-dec { color: #dcdcaa; }
+  .hl-sf  { color: #9cdcfe; font-style: italic; }
+  .hl-op  { color: #d4d4d4; }
+  .hl-val { color: #569cd6; }
+  .hl-tp  { color: #4ec9b0; }
+  .sb-empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .sb-code-btn.save-btn { border-color: var(--green); color: var(--green); }
+  .sb-code-btn.save-btn:hover { background: rgba(34,197,94,0.1); }
+
+
+  /* ── Depth fading ── */
+  .graph-col[data-depth="2"] { opacity: 0.85; }
+  .graph-col[data-depth="3"] { opacity: 0.7; }
+  .graph-col[data-depth="4"] { opacity: 0.55; }
+
+  /* ── Loading & error ── */
+  .load-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 80px 20px;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+{% endblock %}
+
+{% block body %}
+<nav class="navbar">
+  <div class="navbar-brand">
+    <a href="/dashboard" style="color:var(--text-dim);text-decoration:none;font-size:13px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;"><path d="m15 18-6-6 6-6"/></svg>
+      Dashboard
+    </a>
+    <span style="color:var(--border);">/</span>
+    <a href="/lineage-ui?repo={{ repo }}&branch={{ branch }}" style="color:var(--text-dim);text-decoration:none;font-size:13px;">Functions</a>
+    <span style="color:var(--border);">/</span>
+    Asset Lineage
+  </div>
+  <div class="navbar-right">
+    <a href="/changes?repo={{ repo }}&branch={{ branch }}" class="ib-btn" id="nav-changes-btn" style="display:none;">
+      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);"></span>
+      <span id="nav-changes-count">0</span> Changes
+    </a>
+  </div>
+</nav>
+
+<div class="info-bar" id="info-bar" style="display:none;">
+  <span class="ib-name" id="ib-name"></span>
+  <span class="ib-sep">|</span>
+  <span class="ib-stat up" id="ib-up"></span>
+  <span class="ib-stat down" id="ib-down"></span>
+  <span class="ib-sep">|</span>
+  <span class="ib-file" id="ib-file"></span>
+  <span class="ib-spacer"></span>
+  <button class="ib-btn" onclick="raf(centerView)" title="Recenter view">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></svg>
+    Recenter
+  </button>
 </div>
 
-<div id="search-results"></div>
-
-<div id="lineage-wrapper">
-  <svg id="edges-svg"></svg>
-  <div id="lineage"></div>
+<div id="loading" class="load-wrap">
+  <div class="spinner"></div>
+  Loading lineage...
 </div>
+
+<div class="graph-viewport" id="viewport" style="display:none;">
+  <div class="graph-plane" id="plane">
+    <svg class="graph-svg" id="svg"></svg>
+  </div>
+
+  <div class="zoom-controls">
+    <button class="zoom-btn" onclick="zoomIn()" title="Zoom in">+</button>
+    <button class="zoom-btn" onclick="zoomOut()" title="Zoom out">&minus;</button>
+  </div>
+  <div class="zoom-label" id="zoom-label">100%</div>
+</div>
+
+<div id="error" style="display:none;padding:80px 20px;text-align:center;color:var(--text-dim);">
+  Node not found. <a href="/lineage-ui?repo={{ repo }}&branch={{ branch }}">Back to functions</a>
+</div>
+
+<!-- ── Sidebar ── -->
+<div class="sidebar-overlay" id="sb-overlay" onclick="closeSidebar()"></div>
+<div class="sidebar" id="sidebar">
+  <div class="sb-header">
+    <span class="sb-title" id="sb-title"></span>
+    <button class="sb-close" onclick="closeSidebar()" title="Close">&times;</button>
+  </div>
+  <div class="sb-meta" id="sb-meta"></div>
+  <div class="sb-code-header">
+    <span class="sb-code-label">Source code</span>
+    <button class="sb-code-btn" id="sb-copy-btn" onclick="copySidebarSource()">Copy</button>
+    <button class="sb-code-btn" id="sb-edit-toggle" onclick="toggleSidebarEdit()">Edit</button>
+    <button class="sb-code-btn save-btn" id="sb-save-btn" onclick="saveCurrentEdit()" style="display:none;">Save</button>
+  </div>
+  <div class="sb-code-wrap" id="sb-code-wrap"></div>
+</div>
+
 
 <script>
+var repo = "{{ repo }}";
+var branch = "{{ branch }}";
+var rootId = "{{ asset_id }}";
 
-const API_URL="/lineage-data";
-const urlParams=new URLSearchParams(window.location.search);
-const repo=urlParams.get("repo")||"";
-const branch=urlParams.get("branch")||"";
-const assetId=urlParams.get("asset_id")||"";
+var nodeCache = {};
+var expanded = {};
+var selectedNodeId = null;
+var selectedEdge = null;   /* edge key string "parentId>childId>side" or null */
+var MAX_COL = 15;
+var graphEdges = [];  /* [{parentId, childId, side}] — rebuilt each renderGraph */
 
-fetch(API_URL+"?"+new URLSearchParams({repo,branch}).toString())
-.then(r=>r.json())
-.then(data=>{
-  window._data=data;
-  window._nodeMap=new Map(data.nodes.map(n=>[n.id,n]));
+/* ── Pan + zoom state ── */
+var vp, plane;
+var panX = 0, panY = 0, zoom = 1;
+var isPanning = false, startX = 0, startY = 0, startPanX = 0, startPanY = 0;
 
-  window._graph={
-    nodes:new Map(),
-    edges:new Set()
+function applyTransform() {
+  plane.style.transform = "translate(" + panX + "px," + panY + "px) scale(" + zoom + ")";
+}
+
+function initPan() {
+  vp = document.getElementById("viewport");
+  plane = document.getElementById("plane");
+  vp.addEventListener("mousedown", function(e) {
+    if (e.button !== 0) return;
+    isPanning = true;
+    startX = e.clientX; startY = e.clientY;
+    startPanX = panX; startPanY = panY;
+    vp.classList.add("panning");
+  });
+  window.addEventListener("mousemove", function(e) {
+    if (!isPanning) return;
+    panX = startPanX + (e.clientX - startX);
+    panY = startPanY + (e.clientY - startY);
+    applyTransform();
+  });
+  window.addEventListener("mouseup", function() {
+    isPanning = false;
+    vp.classList.remove("panning");
+  });
+  vp.addEventListener("click", function(e) {
+    if (e.target === vp || e.target === plane || e.target.classList.contains("graph-svg")) {
+      if (selectedNodeId) { selectedNodeId = null; applySelection(); }
+      if (selectedEdge)   { selectedEdge = null;   applyEdgeSelection(null); }
+    }
+  });
+  vp.addEventListener("wheel", function(e) {
+    e.preventDefault();
+    var delta = e.deltaY > 0 ? -0.08 : 0.08;
+    var newZoom = Math.max(0.3, Math.min(2, zoom + delta));
+    var rect = vp.getBoundingClientRect();
+    var cx = e.clientX - rect.left;
+    var cy = e.clientY - rect.top;
+    panX = cx - (cx - panX) * (newZoom / zoom);
+    panY = cy - (cy - panY) * (newZoom / zoom);
+    zoom = newZoom;
+    applyTransform();
+    document.getElementById("zoom-label").textContent = Math.round(zoom * 100) + "%";
+  }, { passive: false });
+}
+
+function zoomIn()  { zoom = Math.min(2, zoom + 0.15); applyTransform(); document.getElementById("zoom-label").textContent = Math.round(zoom*100)+"%"; }
+function zoomOut() { zoom = Math.max(0.3, zoom - 0.15); applyTransform(); document.getElementById("zoom-label").textContent = Math.round(zoom*100)+"%"; }
+
+function centerView() {
+  var vpR = vp.getBoundingClientRect();
+  var pw = plane.scrollWidth * zoom;
+  var ph = plane.scrollHeight * zoom;
+  panX = (vpR.width - pw) / 2;
+  panY = Math.max(20, (vpR.height - ph) / 2);
+  applyTransform();
+}
+
+/* ── Fetch helpers ── */
+function fetchNode(id) {
+  if (nodeCache[id]) return Promise.resolve(nodeCache[id]);
+  return fetch("/lineage-node?" + new URLSearchParams({ repo: repo, branch: branch, asset_id: id }).toString())
+    .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function(data) { nodeCache[id] = data; return data; });
+}
+
+function ex(id) { return expanded[id] || { left: false, right: false }; }
+
+function selectNode(id) {
+  selectedEdge   = null;
+  selectedNodeId = (selectedNodeId === id) ? null : id;
+  applySelection();
+  if (selectedNodeId) {
+    openSidebar(selectedNodeId);
+  } else {
+    closeSidebar();
+  }
+}
+
+function applySelection() {
+  /* Build set of node IDs directly connected to the selected node */
+  var connected = {};
+  if (selectedNodeId) {
+    connected[selectedNodeId] = true;
+    graphEdges.forEach(function(e) {
+      if (e.parentId === selectedNodeId) connected[e.childId] = true;
+      if (e.childId  === selectedNodeId) connected[e.parentId] = true;
+    });
+  }
+
+  /* Dim/select center node */
+  var centerEl = document.getElementById("center-node");
+  if (centerEl) {
+    centerEl.classList.remove("dimmed", "selected");
+    if (selectedNodeId) {
+      if (selectedNodeId === rootId) centerEl.classList.add("selected");
+      else if (!connected[rootId])   centerEl.classList.add("dimmed");
+    }
+  }
+
+  var allCards = document.querySelectorAll(".node[data-node-id]");
+  allCards.forEach(function(el) {
+    var nid = el.getAttribute("data-node-id");
+    el.classList.remove("dimmed", "selected");
+    if (selectedNodeId) {
+      if (nid === selectedNodeId) el.classList.add("selected");
+      else if (!connected[nid])   el.classList.add("dimmed");
+    }
+  });
+  drawLines();
+}
+
+function toggleExpand(id, side) {
+  if (!expanded[id]) expanded[id] = { left: false, right: false };
+  expanded[id][side] = !expanded[id][side];
+  if (expanded[id][side] && !nodeCache[id]) {
+    fetchNode(id).then(function() { renderGraph(); raf(drawLines); });
+  } else {
+    renderGraph();
+    raf(drawLines);
+  }
+}
+
+function getUpCount(id) {
+  /* upstream = callees/dependencies (Atlan model) */
+  if (nodeCache[id]) return nodeCache[id].upstream.length;
+  for (var k in nodeCache) {
+    var d = nodeCache[k], all = d.upstream.concat(d.downstream);
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].id === id) return all[i].downstream_count !== undefined ? all[i].downstream_count : 0;
+    }
+  }
+  return -1;
+}
+
+function getDownCount(id) {
+  /* downstream = callers/consumers (Atlan model) */
+  if (nodeCache[id]) return nodeCache[id].downstream.length;
+  for (var k in nodeCache) {
+    var d = nodeCache[k], all = d.upstream.concat(d.downstream);
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].id === id) return (all[i].upstream_ids || []).length;
+    }
+  }
+  return -1;
+}
+
+/* ── Build columns (unified, dedup-safe, supports cross-direction & back-edges) ── */
+function buildAllColumns(l1UpObjs, l1DownObjs) {
+  graphEdges = [];
+  var placed  = {};   /* id → col_number — each node placed exactly once */
+  var traversed = {}; /* id+dir → true — don't re-process a node+direction */
+  var colNodes = {};  /* col_number → [{id, parent}] */
+  placed[rootId] = 0;
+
+  function placeNode(id, col, parentId, side) {
+    graphEdges.push({ parentId: parentId, childId: id, side: side });
+    if (placed[id] === undefined) {
+      placed[id] = col;
+      if (!colNodes[col]) colNodes[col] = [];
+      colNodes[col].push({ id: id, parent: parentId });
+      return true;
+    }
+    return false; /* already placed — edge still recorded above */
+  }
+
+  var queue = []; /* [{id, col, dir}] */
+
+  /* Seed from root's downstream (right side, col +1) */
+  l1DownObjs.forEach(function(nd) {
+    placeNode(nd.id, 1, rootId, 'downstream');
+    if (!traversed[nd.id + 'r'] && ex(nd.id).right && nodeCache[nd.id]) queue.push({ id: nd.id, col: 1, dir: 'r' });
+    if (!traversed[nd.id + 'l'] && ex(nd.id).left  && nodeCache[nd.id]) queue.push({ id: nd.id, col: 1, dir: 'l' });
+  });
+
+  /* Seed from root's upstream (left side, col -1) */
+  l1UpObjs.forEach(function(nd) {
+    placeNode(nd.id, -1, rootId, 'upstream');
+    if (!traversed[nd.id + 'l'] && ex(nd.id).left  && nodeCache[nd.id]) queue.push({ id: nd.id, col: -1, dir: 'l' });
+    if (!traversed[nd.id + 'r'] && ex(nd.id).right && nodeCache[nd.id]) queue.push({ id: nd.id, col: -1, dir: 'r' });
+  });
+
+  while (queue.length) {
+    var item = queue.shift();
+    var key = item.id + item.dir;
+    if (traversed[key]) continue;
+    traversed[key] = true;
+
+    var data = nodeCache[item.id];
+    if (!data) continue;
+
+    var neighbors = item.dir === 'r' ? data.downstream : data.upstream;
+    var nextCol   = item.dir === 'r' ? item.col + 1    : item.col - 1;
+    var side      = item.dir === 'r' ? 'downstream'    : 'upstream';
+
+    neighbors.forEach(function(nd) {
+      if (nd.id === rootId) {
+        /* Back-edge to root: record edge only, root stays as center node */
+        graphEdges.push({ parentId: item.id, childId: rootId, side: side });
+        return;
+      }
+      placeNode(nd.id, nextCol, item.id, side);
+      var ndCol = placed[nd.id]; /* use the column where nd was actually placed */
+      if (!traversed[nd.id + 'r'] && ex(nd.id).right && nodeCache[nd.id]) queue.push({ id: nd.id, col: ndCol, dir: 'r' });
+      if (!traversed[nd.id + 'l'] && ex(nd.id).left  && nodeCache[nd.id]) queue.push({ id: nd.id, col: ndCol, dir: 'l' });
+    });
+  }
+
+  /* Split colNodes into leftCols / rightCols ordered nearest→furthest */
+  var colNums = Object.keys(colNodes).map(Number).sort(function(a, b) { return a - b; });
+  var leftCols = [], leftDepths = [], rightCols = [], rightDepths = [];
+
+  colNums.forEach(function(c) {
+    if (c < 0) { leftCols.unshift(colNodes[c]);  leftDepths.unshift(-c); }
+    if (c > 0) { rightCols.push(colNodes[c]);     rightDepths.push(c); }
+  });
+  /* leftCols[0]=L1-upstream … leftCols[last]=furthest (rendered furthest-first by loop) */
+  /* rightCols[0]=L1-downstream … rightCols[last]=furthest */
+
+  return { leftCols: leftCols, leftDepths: leftDepths, rightCols: rightCols, rightDepths: rightDepths };
+}
+
+/* ── Initial load ── */
+fetchNode(rootId)
+  .then(function(data) {
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("viewport").style.display = "";
+    document.getElementById("info-bar").style.display = "";
+    var n = data.node, info = pn(n.name);
+    document.getElementById("ib-name").textContent = info.f;
+    document.getElementById("ib-up").textContent = "\u2191 " + data.upstream.length + " upstream";
+    document.getElementById("ib-down").textContent = "\u2193 " + data.downstream.length + " downstream";
+    document.getElementById("ib-file").textContent = n.file + ":" + n.lineno;
+    initPan();
+    renderGraph();
+    requestAnimationFrame(centerView);
+  })
+  .catch(function() {
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("error").style.display = "";
+  });
+
+/* ── Helpers ── */
+function pn(name) { var p = (name || "").split("."); return { f: p[p.length - 1], m: p.slice(0, -1).join(".") }; }
+function esc(s) { var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+function makeGap() { var g = document.createElement("div"); g.className = "col-gap"; return g; }
+function raf(fn) { requestAnimationFrame(function() { requestAnimationFrame(fn); }); }
+
+function resolveNode(id) {
+  if (nodeCache[id]) return nodeCache[id].node;
+  for (var k in nodeCache) {
+    var d = nodeCache[k], all = d.upstream.concat(d.downstream);
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].id === id) return all[i];
+    }
+  }
+  return null;
+}
+
+/* ── Render ── */
+function renderGraph() {
+  selectedNodeId = null;
+  selectedEdge   = null;
+  var plane = document.getElementById("plane");
+  plane.innerHTML = '<svg class="graph-svg" id="svg"></svg>';
+
+  var data = nodeCache[rootId];
+  if (!data) return;
+  var n = data.node, info = pn(n.name);
+  /* Atlan model: upstream (left) = callees/dependencies; downstream (right) = callers/consumers.
+   * API now returns data.upstream = callees, data.downstream = callers (corrected in lineage_repo). */
+  var l1UpObjs   = ex(rootId).left  ? data.upstream   : [];
+  var l1DownObjs = ex(rootId).right ? data.downstream : [];
+
+  var gr = buildAllColumns(l1UpObjs, l1DownObjs);
+
+  /* Left columns: leftCols[0]=L1 … leftCols[last]=furthest — render furthest first */
+  for (var li = gr.leftCols.length - 1; li >= 0; li--) {
+    plane.appendChild(makeSideCol(gr.leftCols[li], "upstream", gr.leftDepths[li]));
+    plane.appendChild(makeGap());
+  }
+
+  /* ── Center node ── */
+  var cc = document.createElement("div");
+  cc.className = "graph-col col-center";
+  var cn = document.createElement("div");
+  cn.className = "center-node";
+  cn.id = "center-node";
+
+  var badgeUp = data.upstream.length
+    ? '<span class="b-up">\u2191 ' + data.upstream.length + '</span>'
+    : '<span class="b-zero">\u2191 0</span>';
+  var badgeDown = data.downstream.length
+    ? '<span class="b-down">\u2193 ' + data.downstream.length + '</span>'
+    : '<span class="b-zero">\u2193 0</span>';
+
+  cn.innerHTML =
+    '<div class="cn-name">' + esc(info.f) + '</div>' +
+    '<div class="cn-module">' + esc(info.m) + '</div>' +
+    '<div class="cn-file">' + esc(n.file + ':' + n.lineno) + '</div>' +
+    '<div class="cn-badge">' + badgeUp + badgeDown + '</div>';
+  cn.style.cursor = "pointer";
+  cn.onclick = function(e) {
+    if (e.target.closest(".c-expand")) return;
+    openSidebar(rootId);
   };
 
-  setupSearch();
+  if (data.upstream.length) {
+    var lb = document.createElement("div");
+    lb.className = "c-expand left" + (ex(rootId).left ? " active" : "");
+    lb.innerHTML = '\u2190<span class="pip">' + data.upstream.length + '</span>';
+    lb.onclick = function(e) { e.stopPropagation(); toggleExpand(rootId, "left"); };
+    cn.appendChild(lb);
+  }
+  if (data.downstream.length) {
+    var rb = document.createElement("div");
+    rb.className = "c-expand right" + (ex(rootId).right ? " active" : "");
+    rb.innerHTML = '\u2192<span class="pip">' + data.downstream.length + '</span>';
+    rb.onclick = function(e) { e.stopPropagation(); toggleExpand(rootId, "right"); };
+    cn.appendChild(rb);
+  }
+  cc.appendChild(cn);
+  plane.appendChild(cc);
 
-  const initial=assetId||data.nodes[0]?.id;
-  if(initial){
-    loadRoot(initial);
+  /* Right columns: rightCols[0]=L1 … rightCols[last]=furthest — render nearest first */
+  for (var ri = 0; ri < gr.rightCols.length; ri++) {
+    plane.appendChild(makeGap());
+    plane.appendChild(makeSideCol(gr.rightCols[ri], "downstream", gr.rightDepths[ri]));
+  }
+
+  /* Move SVG to end of plane so it sits above all column cards in z-order.
+     pointer-events:none on the SVG means cards are still clickable through it;
+     only .line-hit paths (pointer-events:stroke) intercept line clicks. */
+  plane.appendChild(document.getElementById("svg"));
+
+  raf(drawLines);
+}
+
+function makeSideCol(entries, variant, depth) {
+  var col = document.createElement("div");
+  col.className = "graph-col";
+  col.setAttribute("data-depth", depth);
+
+  var lbl = document.createElement("div");
+  lbl.className = "col-label " + variant;
+  lbl.textContent = (variant === "upstream" ? "\u2190 " : "") + variant + " L" + depth + (variant === "downstream" ? " \u2192" : "");
+  col.appendChild(lbl);
+
+  var showing = Math.min(MAX_COL, entries.length);
+  for (var i = 0; i < showing; i++) {
+    col.appendChild(makeNodeCard(entries[i], variant));
+  }
+
+  /* Pagination: show remaining on click */
+  if (entries.length > MAX_COL) {
+    var rest = entries.length - MAX_COL;
+    var more = document.createElement("div");
+    more.className = "col-more";
+    more.textContent = "+ " + rest + " more";
+    more.onclick = (function(start, ents, v) {
+      return function() {
+        for (var j = start; j < ents.length; j++) {
+          col.insertBefore(makeNodeCard(ents[j], v), more);
+        }
+        more.remove();
+        raf(drawLines);
+      };
+    })(MAX_COL, entries, variant);
+    col.appendChild(more);
+  }
+
+  return col;
+}
+
+function makeNodeCard(entry, variant) {
+  var nd = resolveNode(entry.id);
+  if (!nd) {
+    var placeholder = document.createElement("div");
+    placeholder.className = "node " + variant;
+    placeholder.innerHTML = '<div class="n-name">...</div>';
+    return placeholder;
+  }
+  var ni = pn(nd.name);
+  var uC = getUpCount(entry.id);
+  var dC = getDownCount(entry.id);
+
+  var card = document.createElement("div");
+  card.className = "node " + variant;
+  card.setAttribute("data-node-id", entry.id);
+  card.setAttribute("data-parent-id", entry.parent);
+
+  /* Counts row inside the card */
+  var upLabel = uC > 0 ? '<span class="cnt-up">\u2191 ' + uC + '</span>' : '<span class="cnt-zero">\u2191 0</span>';
+  var downLabel = dC > 0 ? '<span class="cnt-down">\u2193 ' + dC + '</span>' : '<span class="cnt-zero">\u2193 0</span>';
+
+  card.innerHTML =
+    '<div class="n-name">' + esc(ni.f) + '</div>' +
+    '<div class="n-module">' + esc(ni.m) + '</div>' +
+    '<div class="n-file">' + esc(nd.file + ':' + nd.lineno) + '</div>' +
+    '<div class="n-counts">' + upLabel + downLabel + '</div>';
+
+  /* Single click = select/highlight; double click = navigate to full lineage */
+  card.onclick = (function(eid) { return function(e) { e.stopPropagation(); selectNode(eid); }; })(entry.id);
+  card.ondblclick = (function(eid) { return function() {
+    window.location = "/asset?repo=" + encodeURIComponent(repo) + "&branch=" + encodeURIComponent(branch) + "&asset_id=" + encodeURIComponent(eid);
+  }; })(entry.id);
+
+  /* Show both expand buttons on every side node — both directions are explorable */
+  if (uC > 0) {
+    var lb = document.createElement("div");
+    lb.className = "node-expand left" + (ex(entry.id).left ? " active" : "");
+    lb.innerHTML = '\u2190<span class="pip">' + uC + '</span>';
+    lb.onclick = (function(eid) { return function(e) { e.stopPropagation(); toggleExpand(eid, "left"); }; })(entry.id);
+    card.appendChild(lb);
+  }
+  if (dC > 0) {
+    var rb = document.createElement("div");
+    rb.className = "node-expand right" + (ex(entry.id).right ? " active" : "");
+    rb.innerHTML = '\u2192<span class="pip">' + dC + '</span>';
+    rb.onclick = (function(eid) { return function(e) { e.stopPropagation(); toggleExpand(eid, "right"); }; })(entry.id);
+    card.appendChild(rb);
+  }
+
+  return card;
+}
+
+/* ── SVG bezier lines (uses graphEdges — supports cross-column & back-edges) ── */
+function drawLines() {
+  var svg = document.getElementById("svg");
+  if (!svg) return;
+  var plane = document.getElementById("plane");
+  var pr = plane.getBoundingClientRect();
+  svg.setAttribute("width", plane.scrollWidth);
+  svg.setAttribute("height", plane.scrollHeight);
+  svg.innerHTML = "";
+
+  function getEl(id) {
+    return id === rootId
+      ? document.getElementById("center-node")
+      : plane.querySelector('.node[data-node-id="' + id + '"]');
+  }
+
+  /* Deduplicate edges before drawing */
+  var seen = {};
+  graphEdges.forEach(function(edge) {
+    var ekey = edge.parentId + '>' + edge.childId + '>' + edge.side;
+    if (seen[ekey]) return;
+    seen[ekey] = true;
+
+    var parentEl = getEl(edge.parentId);
+    var childEl  = getEl(edge.childId);
+    if (!parentEl || !childEl) return;
+
+    var dim = false, highlighted = false;
+    if (selectedEdge) {
+      highlighted = (ekey === selectedEdge);
+      dim = !highlighted;
+    } else if (selectedNodeId) {
+      dim = (edge.parentId !== selectedNodeId && edge.childId !== selectedNodeId);
+    }
+
+    var pr_rect = parentEl.getBoundingClientRect();
+    var ch_rect = childEl.getBoundingClientRect();
+
+    /* Anchor on parent: use the expand-circle button on the relevant side */
+    var circleSelector = edge.side === 'downstream'
+      ? ".c-expand.right, .node-expand.right"
+      : ".c-expand.left, .node-expand.left";
+    var circleEl = parentEl.querySelector(circleSelector);
+
+    var x1, y1;
+    if (circleEl) {
+      var cr = circleEl.getBoundingClientRect();
+      x1 = cr.left - pr.left + cr.width / 2;
+      y1 = cr.top  - pr.top  + cr.height / 2;
+    } else {
+      x1 = (edge.side === 'downstream' ? pr_rect.right : pr_rect.left) - pr.left;
+      y1 = pr_rect.top - pr.top + pr_rect.height / 2;
+    }
+
+    /* Anchor on child: determine if this is a "normal" or "back" edge by position */
+    var isBack = edge.side === 'downstream'
+      ? ch_rect.left < pr_rect.right - 20   /* child is not clearly to the right */
+      : ch_rect.right > pr_rect.left + 20;  /* child is not clearly to the left */
+
+    var x2, y2;
+    if (edge.side === 'downstream') {
+      x2 = (isBack ? ch_rect.right : ch_rect.left) - pr.left;
+    } else {
+      x2 = (isBack ? ch_rect.left : ch_rect.right) - pr.left;
+    }
+    y2 = ch_rect.top - pr.top + ch_rect.height / 2;
+
+    var cp = Math.max(40, Math.abs(x2 - x1) * 0.45);
+    var d;
+    if (isBack) {
+      /* Back-edge: curve outward past the parent, then come back */
+      var outDir = edge.side === 'downstream' ? 1 : -1;
+      d = "M" + x1 + "," + y1 +
+          " C" + (x1 + outDir * cp) + "," + y1 +
+          " "  + (x2 + outDir * cp) + "," + y2 +
+          " "  + x2 + "," + y2;
+    } else {
+      var c1x = x1 + (edge.side === 'downstream' ?  cp : -cp);
+      var c2x = x2 + (edge.side === 'downstream' ? -cp :  cp);
+      d = "M" + x1 + "," + y1 + " C" + c1x + "," + y1 + " " + c2x + "," + y2 + " " + x2 + "," + y2;
+    }
+
+    var lineType = edge.side === 'downstream' ? 'down' : 'up';
+    var stateCls  = highlighted ? " highlighted" : (dim ? " dimmed" : "");
+
+    var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    path.setAttribute("class", "line-" + lineType + stateCls);
+    svg.appendChild(path);
+
+    var dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    dot.setAttribute("cx", x2);
+    dot.setAttribute("cy", y2);
+    dot.setAttribute("r", 3);
+    dot.setAttribute("class", "dot-" + lineType + stateCls);
+    svg.appendChild(dot);
+
+    /* Wide invisible hit-path — attributes set directly for reliable cross-browser pointer-events */
+    var hitPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    hitPath.setAttribute("d", d);
+    hitPath.setAttribute("stroke", "rgba(0,0,0,0.01)");
+    hitPath.setAttribute("stroke-width", "60");
+    hitPath.setAttribute("fill", "none");
+    hitPath.setAttribute("pointer-events", "stroke");
+    hitPath.style.cursor = "pointer";
+    hitPath.onclick = (function(ek, pid, cid) {
+      return function(evt) {
+        evt.stopPropagation();
+        selectEdge(ek, pid, cid);
+      };
+    })(ekey, edge.parentId, edge.childId);
+    svg.appendChild(hitPath);
+  });
+}
+
+window.addEventListener("resize", function() { raf(drawLines); });
+
+/* ── Edge click selection ── */
+function selectEdge(ekey, parentId, childId) {
+  selectedEdge    = (selectedEdge === ekey) ? null : ekey;
+  selectedNodeId  = null;
+  closeSidebar();
+  applyEdgeSelection(selectedEdge ? { parentId: parentId, childId: childId } : null);
+}
+
+function applyEdgeSelection(endpoints) {
+  /* Dim/un-dim the center node */
+  var centerEl = document.getElementById("center-node");
+  if (centerEl) {
+    centerEl.classList.remove("dimmed", "selected");
+    if (endpoints && rootId !== endpoints.parentId && rootId !== endpoints.childId) {
+      centerEl.classList.add("dimmed");
+    }
+  }
+  /* Dim/un-dim all side cards */
+  var allCards = document.querySelectorAll(".node[data-node-id]");
+  allCards.forEach(function(el) {
+    var nid = el.getAttribute("data-node-id");
+    el.classList.remove("dimmed", "selected");
+    if (endpoints && nid !== endpoints.parentId && nid !== endpoints.childId) {
+      el.classList.add("dimmed");
+    }
+  });
+  drawLines();
+}
+
+/* ── Sidebar ── */
+var sidebarNodeId = null;
+var sidebarEditing = false;
+
+function openSidebar(id) {
+  var nd = resolveNode(id);
+  if (!nd) return;
+  sidebarNodeId = id;
+  sidebarEditing = false;
+
+  var ni = pn(nd.name);
+  var uC = getUpCount(id);
+  var dC = getDownCount(id);
+  var endL = nd.end_lineno || nd.lineno;
+
+  document.getElementById("sb-title").textContent = ni.f;
+
+  var meta = document.getElementById("sb-meta");
+  meta.innerHTML =
+    '<div class="sb-meta-row"><span class="sb-meta-label">Module</span><span class="sb-meta-value">' + esc(ni.m || "\u2014") + '</span></div>' +
+    '<div class="sb-meta-row"><span class="sb-meta-label">File</span><span class="sb-meta-value">' + esc(nd.file) + '</span></div>' +
+    '<div class="sb-meta-row"><span class="sb-meta-label">Lines</span><span class="sb-meta-value">' + nd.lineno + ' \u2013 ' + endL + '</span></div>' +
+    '<div class="sb-meta-row"><span class="sb-meta-label">Upstream</span><span class="sb-meta-value up">' + (uC >= 0 ? uC : '?') + '</span></div>' +
+    '<div class="sb-meta-row"><span class="sb-meta-label">Downstream</span><span class="sb-meta-value down">' + (dC >= 0 ? dC : '?') + '</span></div>';
+
+  if (id !== rootId) {
+    meta.innerHTML +=
+      '<button class="sb-nav-btn" onclick="window.location=\'/asset?repo=' + encodeURIComponent(repo) + '&branch=' + encodeURIComponent(branch) + '&asset_id=' + encodeURIComponent(id) + '\'">Open full lineage \u2192</button>';
+  }
+
+  renderSidebarCode(nd);
+
+  document.getElementById("sidebar").classList.add("open");
+  document.getElementById("sb-overlay").classList.add("open");
+  document.getElementById("sb-edit-toggle").classList.remove("active");
+}
+
+function closeSidebar() {
+  document.getElementById("sidebar").classList.remove("open");
+  document.getElementById("sb-overlay").classList.remove("open");
+  sidebarNodeId = null;
+  sidebarEditing = false;
+}
+
+function renderSidebarCode(nd) {
+  var wrap = document.getElementById("sb-code-wrap");
+  var saveBtn = document.getElementById("sb-save-btn");
+  var originalSrc = nd.source;
+  if (!originalSrc) {
+    wrap.innerHTML = '<div class="sb-empty">Source code not available.<br>Re-crawl the repository to populate source data.</div>';
+    saveBtn.style.display = "none";
+    return;
+  }
+
+  /* Use saved edit if available */
+  var change = loadChange(sidebarNodeId);
+  var src = (change && change.edited) ? change.edited : originalSrc;
+
+  var highlighted = highlightPython(src);
+  var lines = highlighted.split("\n");
+  var startLine = nd.lineno || 1;
+
+  /* Build gutter */
+  var gutterHtml = "";
+  for (var i = 0; i < lines.length; i++) {
+    gutterHtml += "<div>" + (startLine + i) + "</div>";
+  }
+
+  var editor = document.createElement("div");
+  editor.className = "sb-editor";
+
+  var gutter = document.createElement("div");
+  gutter.className = "sb-gutter";
+  gutter.id = "sb-gutter";
+  gutter.innerHTML = gutterHtml;
+
+  var pre = document.createElement("pre");
+  pre.className = "sb-code-pre";
+  pre.innerHTML = lines.join("\n");
+
+  if (sidebarEditing) {
+    pre.setAttribute("contenteditable", "true");
+    pre.setAttribute("spellcheck", "false");
+    pre.id = "sb-editable";
+
+    pre.addEventListener("input", function() { syncGutter(); });
+
+    pre.addEventListener("keydown", function(e) {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        document.execCommand("insertText", false, "    ");
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        var sel = window.getSelection();
+        if (!sel.rangeCount) return;
+        var range = sel.getRangeAt(0);
+        var node = range.startContainer;
+        var text = node.nodeType === 3 ? node.textContent : "";
+        var offset = range.startOffset;
+        var before = text.substring(0, offset);
+        var lastNL = before.lastIndexOf("\n");
+        var curLine = lastNL === -1 ? before : before.substring(lastNL + 1);
+        var indent = curLine.match(/^(\s*)/)[1];
+        document.execCommand("insertText", false, "\n" + indent);
+        syncGutter();
+      }
+    });
+
+    saveBtn.style.display = "";
+  } else {
+    saveBtn.style.display = "none";
+  }
+
+  editor.appendChild(gutter);
+  editor.appendChild(pre);
+  wrap.innerHTML = "";
+  wrap.appendChild(editor);
+}
+
+function syncGutter() {
+  var pre = document.getElementById("sb-editable");
+  var gutter = document.getElementById("sb-gutter");
+  if (!pre || !gutter) return;
+  var nd = resolveNode(sidebarNodeId);
+  var startLine = (nd && nd.lineno) || 1;
+  var text = pre.innerText || "";
+  var lineCount = text.split("\n").length;
+  var html = "";
+  for (var i = 0; i < lineCount; i++) {
+    html += "<div>" + (startLine + i) + "</div>";
+  }
+  gutter.innerHTML = html;
+}
+
+function escHtml(s) {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/* ── Python syntax highlighter ── */
+var PY_KW = /^(def|class|return|yield|lambda|del|global|nonlocal|assert|pass|async|await|with|as)$/;
+var PY_CF = /^(if|elif|else|for|while|try|except|finally|raise|break|continue|and|or|not|in|is|import|from)$/;
+var PY_VAL = /^(True|False|None)$/;
+var PY_BI = /^(print|len|range|type|int|str|float|list|dict|set|tuple|bool|super|isinstance|issubclass|hasattr|getattr|setattr|delattr|enumerate|zip|map|filter|sorted|reversed|any|all|min|max|sum|abs|round|open|iter|next|id|repr|format|input|staticmethod|classmethod|property|object|Exception|ValueError|TypeError|KeyError|IndexError|AttributeError|RuntimeError|StopIteration|NotImplementedError|OSError|IOError)$/;
+var PY_TP = /^(Optional|List|Dict|Set|Tuple|Union|Any|Sequence|Mapping|Callable|Iterable|Iterator|Generator|Type|ClassVar|Final)$/;
+
+/* Regex that matches tokens in priority order */
+var PY_TOK = /("""[\s\S]*?"""|'''[\s\S]*?'''|f"""[\s\S]*?"""|f'''[\s\S]*?''')|([rbuf]?"(?:[^"\\\n]|\\.)*"|[rbuf]?'(?:[^'\\\n]|\\.)*')|(#[^\n]*)|((?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?j?)|(@\w[\w.]*)|\b(\w+)\b|([+\-*\/%=<>!&|^~:;,.()\[\]{}]+)|(\s+)/g;
+
+function highlightPython(src) {
+  var out = "";
+  var lastIdx = 0;
+  var afterDef = false;   /* true right after 'def' or 'class' keyword */
+  var m;
+  PY_TOK.lastIndex = 0;
+  while ((m = PY_TOK.exec(src)) !== null) {
+    /* Gap (shouldn't happen, but safety) */
+    if (m.index > lastIdx) out += escHtml(src.slice(lastIdx, m.index));
+    lastIdx = m.index + m[0].length;
+
+    var triStr   = m[1];
+    var str1     = m[2];
+    var comment  = m[3];
+    var num      = m[4];
+    var dec      = m[5];
+    var word     = m[6];
+    var op       = m[7];
+    var ws       = m[8];
+
+    if (triStr !== undefined) {
+      out += '<span class="hl-str">' + escHtml(triStr) + "</span>";
+      afterDef = false;
+    } else if (str1 !== undefined) {
+      out += '<span class="hl-str">' + escHtml(str1) + "</span>";
+      afterDef = false;
+    } else if (comment !== undefined) {
+      out += '<span class="hl-cm">' + escHtml(comment) + "</span>";
+    } else if (num !== undefined) {
+      out += '<span class="hl-num">' + escHtml(num) + "</span>";
+      afterDef = false;
+    } else if (dec !== undefined) {
+      out += '<span class="hl-dec">' + escHtml(dec) + "</span>";
+      afterDef = false;
+    } else if (word !== undefined) {
+      if (afterDef) {
+        out += '<span class="hl-fn">' + escHtml(word) + "</span>";
+        afterDef = false;
+      } else if (word === "self" || word === "cls") {
+        out += '<span class="hl-sf">' + escHtml(word) + "</span>";
+      } else if (PY_VAL.test(word)) {
+        out += '<span class="hl-val">' + escHtml(word) + "</span>";
+      } else if (PY_KW.test(word)) {
+        out += '<span class="hl-kw">' + escHtml(word) + "</span>";
+        if (word === "def" || word === "class") afterDef = true;
+      } else if (PY_CF.test(word)) {
+        out += '<span class="hl-cf">' + escHtml(word) + "</span>";
+      } else if (PY_TP.test(word)) {
+        out += '<span class="hl-tp">' + escHtml(word) + "</span>";
+      } else if (PY_BI.test(word)) {
+        out += '<span class="hl-bi">' + escHtml(word) + "</span>";
+      } else {
+        out += escHtml(word);
+      }
+    } else if (op !== undefined) {
+      out += '<span class="hl-op">' + escHtml(op) + "</span>";
+      afterDef = false;
+    } else if (ws !== undefined) {
+      out += ws;  /* whitespace/newlines pass through raw */
+      /* don't reset afterDef — allow "def  foo" with spaces */
+    }
+  }
+  if (lastIdx < src.length) out += escHtml(src.slice(lastIdx));
+  return out;
+}
+
+function copySidebarSource() {
+  var nd = resolveNode(sidebarNodeId);
+  if (!nd || !nd.source) return;
+  var editable = document.getElementById("sb-editable");
+  var text = (sidebarEditing && editable) ? editable.innerText : nd.source;
+  navigator.clipboard.writeText(text).then(function() {
+    var btn = document.getElementById("sb-copy-btn");
+    btn.textContent = "Copied!";
+    setTimeout(function() { btn.textContent = "Copy"; }, 1500);
+  });
+}
+
+function toggleSidebarEdit() {
+  sidebarEditing = !sidebarEditing;
+  var btn = document.getElementById("sb-edit-toggle");
+  btn.classList.toggle("active", sidebarEditing);
+  btn.textContent = sidebarEditing ? "View" : "Edit";
+  var nd = resolveNode(sidebarNodeId);
+  if (nd) renderSidebarCode(nd);
+}
+
+/* ── Change tracking (sessionStorage) ── */
+var STORE_KEY = "code-crawler-changes";
+
+function loadAllChanges() {
+  try {
+    return JSON.parse(sessionStorage.getItem(STORE_KEY)) || {};
+  } catch(e) { return {}; }
+}
+
+function saveAllChanges(changes) {
+  sessionStorage.setItem(STORE_KEY, JSON.stringify(changes));
+  updateNavChanges();
+}
+
+function loadChange(assetId) {
+  return loadAllChanges()[assetId] || null;
+}
+
+function saveCurrentEdit() {
+  var pre = document.getElementById("sb-editable");
+  if (!pre || !sidebarNodeId) return;
+  var nd = resolveNode(sidebarNodeId);
+  if (!nd) return;
+
+  var editedText = pre.innerText || "";
+  var originalText = nd.source || "";
+
+  /* Don't save if nothing changed */
+  if (editedText === originalText) {
+    var changes = loadAllChanges();
+    if (changes[sidebarNodeId]) {
+      delete changes[sidebarNodeId];
+      saveAllChanges(changes);
+    }
+    var saveBtn = document.getElementById("sb-save-btn");
+    saveBtn.textContent = "No changes";
+    setTimeout(function() { saveBtn.textContent = "Save"; }, 1200);
+    return;
+  }
+
+  var changes = loadAllChanges();
+  changes[sidebarNodeId] = {
+    name: nd.name,
+    file: nd.file,
+    lineno: nd.lineno,
+    original: originalText,
+    edited: editedText,
+    staged: changes[sidebarNodeId] ? changes[sidebarNodeId].staged : false
+  };
+  saveAllChanges(changes);
+
+  var saveBtn = document.getElementById("sb-save-btn");
+  saveBtn.textContent = "Saved!";
+  setTimeout(function() { saveBtn.textContent = "Save"; }, 1200);
+}
+
+function updateNavChanges() {
+  var changes = loadAllChanges();
+  var count = Object.keys(changes).length;
+  var btn = document.getElementById("nav-changes-btn");
+  if (count > 0) {
+    btn.style.display = "";
+    document.getElementById("nav-changes-count").textContent = count;
+  } else {
+    btn.style.display = "none";
+  }
+}
+
+/* Init: show navbar changes button if there are existing changes */
+updateNavChanges();
+
+document.addEventListener("keydown", function(e) {
+  if (e.key === "Escape" && sidebarNodeId) {
+    closeSidebar();
+    if (selectedNodeId) { selectedNodeId = null; applySelection(); }
   }
 });
-
-function loadRoot(id){
-  window._graph.nodes.clear();
-  window._graph.edges.clear();
-  window._graph.nodes.set(id,{id:id,level:0});
-  renderGraph();
-}
-
-function setupSearch(){
-
-  const input=document.getElementById("search");
-  const results=document.getElementById("search-results");
-
-  input.addEventListener("input",()=>{
-    const q=input.value.toLowerCase();
-    results.innerHTML="";
-
-    if(!q){
-      results.style.display="none";
-      return;
-    }
-
-    const matches=window._data.nodes
-      .sort((a,b)=>{
-        const aMatch=a.name.toLowerCase().includes(q);
-        const bMatch=b.name.toLowerCase().includes(q);
-        return (bMatch?1:0)-(aMatch?1:0);
-      })
-      .filter(n=>n.name.toLowerCase().includes(q))
-      .slice(0,20);
-
-    matches.forEach(n=>{
-      const div=document.createElement("div");
-      div.className="search-item";
-      div.textContent=n.name.split("/").pop();
-      div.onclick=()=>{
-        results.style.display="none";
-        input.value="";
-        loadRoot(n.id);
-      };
-      results.appendChild(div);
-    });
-
-    results.style.display="block";
-  });
-}
-
-function createCard(node){
-  const div=document.createElement("div");
-  div.className="card";
-  div.dataset.nodeId=node.id;
-
-  const short=node.name.split("/").pop();
-
-  div.innerHTML=`
-    <div class="title">${short}</div>
-    <div class="meta">${node.file}:${node.lineno}</div>
-  `;
-
-  div.onclick=()=>expandNode(node);
-
-  return div;
-}
-
-function expandNode(node){
-
-  const graph=window._graph;
-  const data=window._data;
-
-  const currentLevel=graph.nodes.get(node.id).level;
-
-  // upstream
-  (node.upstream_ids||[]).forEach(uid=>{
-    if(!graph.nodes.has(uid)){
-      graph.nodes.set(uid,{id:uid,level:currentLevel-1});
-    }
-    graph.edges.add(uid+"|"+node.id);
-  });
-
-  // downstream
-  data.nodes.forEach(n=>{
-    if((n.upstream_ids||[]).includes(node.id)){
-      if(!graph.nodes.has(n.id)){
-        graph.nodes.set(n.id,{id:n.id,level:currentLevel+1});
-      }
-      graph.edges.add(node.id+"|"+n.id);
-    }
-  });
-
-  renderGraph();
-}
-
-function renderGraph(){
-
-  const lineage=document.getElementById("lineage");
-  lineage.innerHTML="";
-  const svg=document.getElementById("edges-svg");
-  svg.innerHTML="";
-
-  const graph=window._graph;
-  const nodeMap=window._nodeMap;
-
-  const levels={};
-
-  for(const [id,info] of graph.nodes.entries()){
-    if(!levels[info.level]) levels[info.level]=[];
-    levels[info.level].push(id);
-  }
-
-  const sortedLevels=Object.keys(levels).map(Number).sort((a,b)=>a-b);
-
-  sortedLevels.forEach(level=>{
-    const column=document.createElement("div");
-    column.className="node-column";
-
-    levels[level].forEach(id=>{
-      const node=nodeMap.get(id);
-      if(!node) return;
-      column.appendChild(createCard(node));
-    });
-
-    lineage.appendChild(column);
-  });
-
-  setTimeout(drawEdges,50);
-}
-
-function drawEdges(){
-
-  const svg=document.getElementById("edges-svg");
-  const wrapper=document.getElementById("lineage-wrapper");
-  const rect=wrapper.getBoundingClientRect();
-
-  svg.setAttribute("width",wrapper.scrollWidth);
-  svg.setAttribute("height",wrapper.scrollHeight);
-
-  window._graph.edges.forEach(edge=>{
-    const [sourceId,targetId]=edge.split("|");
-
-    const sEl=document.querySelector(`[data-node-id="${sourceId}"]`);
-    const tEl=document.querySelector(`[data-node-id="${targetId}"]`);
-
-    if(!sEl||!tEl) return;
-
-    const s=sEl.getBoundingClientRect();
-    const t=tEl.getBoundingClientRect();
-
-    const x1=s.right-rect.left+wrapper.scrollLeft;
-    const y1=s.top-rect.top+wrapper.scrollTop+s.height/2;
-
-    const x2=t.left-rect.left+wrapper.scrollLeft;
-    const y2=t.top-rect.top+wrapper.scrollTop+t.height/2;
-
-    const path=document.createElementNS("http://www.w3.org/2000/svg","path");
-
-    const curve=`M ${x1} ${y1} C ${x1+80} ${y1}, ${x2-80} ${y2}, ${x2} ${y2}`;
-
-    path.setAttribute("d",curve);
-    path.setAttribute("stroke","#3b82f6");
-    path.setAttribute("stroke-width","2");
-    path.setAttribute("fill","none");
-    path.setAttribute("opacity","0.7");
-
-    svg.appendChild(path);
-  });
-}
-
 </script>
-</body>
-</html>
+{% endblock %}

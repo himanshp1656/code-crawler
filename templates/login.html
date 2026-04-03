@@ -1,92 +1,37 @@
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Code Crawler - Login</title>
-    <style>
-      body {
-        margin: 0;
-        font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell,
-          Noto Sans, sans-serif;
-        background: #050816;
-        color: white;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 100vh;
-      }
-      .card {
-        width: 420px;
-        background: #111827;
-        border: 1px solid #1f2937;
-        border-radius: 14px;
-        padding: 18px;
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
-      }
-      h1 {
-        font-size: 18px;
-        margin: 0 0 12px 0;
-        font-weight: 700;
-        color: #22c55e;
-      }
-      .field {
-        margin-top: 12px;
-      }
-      label {
-        display: block;
-        font-size: 12px;
-        color: #9ca3af;
-        margin-bottom: 6px;
-      }
-      input {
-        width: 100%;
-        padding: 10px 12px;
-        border-radius: 10px;
-        border: 1px solid #1f2937;
-        background: #0b1220;
-        color: white;
-        outline: none;
-      }
-      button {
-        margin-top: 16px;
-        width: 100%;
-        padding: 10px 12px;
-        border-radius: 10px;
-        border: none;
-        background: #22c55e;
-        color: #052e16;
-        font-weight: 700;
-        cursor: pointer;
-      }
-      .error {
-        margin-top: 10px;
-        padding: 10px 12px;
-        border-radius: 10px;
-        background: rgba(239, 68, 68, 0.12);
-        border: 1px solid rgba(239, 68, 68, 0.35);
-        color: #fecaca;
-        font-size: 13px;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="card">
-      <h1>Code Crawler</h1>
-      <form method="post" action="/login">
-        <div class="field">
-          <label>Username</label>
-          <input name="username" autocomplete="username" />
-        </div>
-        <div class="field">
-          <label>Password</label>
-          <input name="password" type="password" autocomplete="current-password" />
-        </div>
-        <button type="submit">Login</button>
-      </form>
-      {% if error %}
-        <div class="error">{{ error }}</div>
-      {% endif %}
-    </div>
-  </body>
-</html>
+{% extends "base.html" %}
+{% block title %}Code Crawler - Login{% endblock %}
 
+{% block body %}
+<div class="center-page">
+  <div class="card center-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+      <span style="font-size:18px;font-weight:700;color:var(--green);">Code Crawler</span>
+    </div>
+    <p style="font-size:13px;color:var(--text-dim);margin-bottom:18px;">Sign in to explore your code lineage.</p>
+
+    <form method="post" action="/login">
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" name="username" autocomplete="username" required placeholder="you@company.com" />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required />
+      </div>
+      <button class="btn btn-green" type="submit">Sign in</button>
+    </form>
+
+    {% if error %}
+      <div class="alert-error">{{ error }}</div>
+    {% endif %}
+
+    <p style="text-align:center;margin-top:16px;font-size:12px;color:var(--text-dim);">
+      Don't have an account? <a href="/signup">Sign up</a>
+    </p>
+    <p style="text-align:center;margin-top:8px;font-size:12px;color:var(--text-dim);">
+      Admin? <a href="/admin/login">Go to admin portal</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

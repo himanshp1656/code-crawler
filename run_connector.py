@@ -7,12 +7,14 @@ Example:
 
 import argparse
 import asyncio
+import os
 from typing import Optional
 
 from temporalio.client import Client
 
 from app.workflow import CodeCrawlerWorkflow, TASK_QUEUE
-from app.db import DEFAULT_TENANT_ID
+
+DEFAULT_TENANT_ID = os.getenv("DEFAULT_TENANT_ID", "default")
 
 
 def _parse_args() -> argparse.Namespace:

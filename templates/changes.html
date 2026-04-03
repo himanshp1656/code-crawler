@@ -1,0 +1,2753 @@
+{% extends "base.html" %}
+{% block title %}Changes{% endblock %}
+
+{% block extra_style %}
+  .ch-page {
+    display: grid;
+    grid-template-columns: minmax(340px, 1fr) minmax(400px, 1.4fr);
+    height: calc(100vh - 57px);
+    overflow: hidden;
+  }
+  @media (max-width: 1000px) {
+    .ch-page { grid-template-columns: 1fr; }
+    .ch-right { display: none; }
+  }
+
+  /* ── Left panel ── */
+  .ch-left {
+    overflow-y: auto;
+    border-right: 1px solid var(--border);
+  }
+  .ch-stats {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    background: rgba(17,24,39,0.3);
+    flex-wrap: wrap;
+  }
+  .ch-stat { display: flex; align-items: center; gap: 6px; }
+  .ch-stat .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+  }
+  .ch-stat .dot.staged    { background: var(--green); }
+  .ch-stat .dot.unstaged  { background: #eab308; }
+  .ch-stat .dot.broken    { background: var(--red); }
+  .ch-stat .dot.breaking  { background: #f97316; }
+  .ch-stat .dot.affected  { background: #f97316; opacity: 0.5; }
+
+  .ch-section {
+    padding: 10px 20px 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 5;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ── Change cards ── */
+  .ch-card {
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+  }
+  .ch-card.highlight { background: rgba(59,130,246,0.06); }
+  .ch-card-head {
+    padding: 12px 20px 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+  }
+  .ch-card-head:hover { background: rgba(255,255,255,0.02); }
+  .ch-card-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ch-card-file {
+    padding: 0 20px 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+  .ch-card-actions { display: flex; gap: 4px; }
+  .ch-btn {
+    width: 26px; height: 26px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.1s;
+    flex-shrink: 0;
+  }
+  .ch-btn.stage:hover   { border-color: var(--green); color: var(--green); }
+  .ch-btn.unstage:hover { border-color: var(--red);   color: var(--red); }
+  .ch-btn.discard:hover { border-color: var(--red);   color: var(--red); }
+
+  /* ── Severity tags ── */
+  .sev-tag {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 7px;
+    vertical-align: middle;
+    border: 1px solid;
+    flex-shrink: 0;
+  }
+  .sev-tag.breaking { background: rgba(239,68,68,0.12); color: #ef4444; border-color: rgba(239,68,68,0.35); }
+  .sev-tag.deleted  { background: rgba(239,68,68,0.2);  color: #f87171; border-color: rgba(239,68,68,0.55); }
+  .sev-tag.modified { background: rgba(99,102,241,0.1); color: #818cf8; border-color: rgba(99,102,241,0.3); }
+
+  /* ── Severity detail line ── */
+  .sev-detail {
+    padding: 0 20px 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    opacity: 0.8;
+  }
+  .sev-detail.breaking { color: #ef4444; }
+  .sev-detail.deleted  { color: #f87171; }
+  .sev-detail.modified { color: var(--text-dim); }
+
+  .ch-blast {
+    font-size: 10px;
+    color: var(--red);
+    opacity: 0.7;
+    margin-left: 4px;
+    white-space: nowrap;
+  }
+
+  /* ── Diff ── */
+  .ch-diff {
+    display: none;
+    margin: 0 20px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+  .ch-diff.open { display: block; }
+  .ch-diff-line { padding: 0 10px; white-space: pre; }
+  .ch-diff-line.diff-add { background: rgba(34,197,94,0.1);  color: #a8d8a8; }
+  .ch-diff-line.diff-del { background: rgba(239,68,68,0.1);  color: #e8a0a0; }
+  .ch-diff-line.diff-ctx { color: var(--text-dim); }
+  .ch-diff-line.diff-sep { color: var(--border); }
+
+  /* ── Right panel ── */
+  .ch-right {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .ch-graph-header {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    background: rgba(17,24,39,0.3);
+  }
+
+  /* ── Legend ── */
+  .ch-legend {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--text-dim);
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    background: rgba(10,15,28,0.5);
+  }
+  .ch-legend-item { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .ch-legend-swatch {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 2px;
+    border: 1.5px solid;
+  }
+  .ch-legend-swatch.broken   { border-color: #ef4444; background: rgba(239,68,68,0.18); border-width: 2px; }
+  .ch-legend-swatch.breaking { border-color: #f97316; background: rgba(249,115,22,0.08); }
+  .ch-legend-swatch.modified { border-color: var(--green); background: rgba(34,197,94,0.08); }
+  .ch-legend-swatch.hop1 { border-color: rgba(249,115,22,0.6); border-style: dashed; }
+  .ch-legend-swatch.hop2 { border-color: rgba(239,68,68,0.35); border-style: dashed; opacity: 0.7; }
+
+  .ch-graph-viewport {
+    flex: 1;
+    position: relative;
+    overflow: auto;
+    background:
+      radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0);
+    background-size: 24px 24px;
+  }
+  .ch-graph-plane {
+    position: relative;
+    min-height: 100%;
+    min-width: max-content;
+    padding: 40px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 80px;
+  }
+  .ch-graph-svg {
+    position: absolute;
+    top: 0; left: 0;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .ch-graph-svg path {
+    fill: none;
+    stroke-width: 1.5;
+    stroke-dasharray: 6 4;
+    animation: chFlowDash 0.8s linear infinite;
+  }
+  .ch-graph-svg path.edge-upstream { stroke: var(--cyan); opacity: 0.3; stroke-dasharray: 4 5; }
+  .ch-graph-svg path.edge-change  { stroke: var(--green); opacity: 0.5; }
+  .ch-graph-svg path.edge-broken  { stroke: #ef4444; opacity: 0.7; stroke-dasharray: none; }
+  .ch-graph-svg path.edge-impact  { stroke: #f97316; opacity: 0.45; }
+  .ch-graph-svg path.edge-deep    { stroke: var(--red); opacity: 0.2; stroke-dasharray: 4 6; }
+  @keyframes chFlowDash { to { stroke-dashoffset: -10; } }
+  .ch-graph-svg circle.dot-upstream { fill: var(--cyan); opacity: 0.4; }
+  .ch-graph-svg circle.dot-change { fill: var(--green); opacity: 0.7; }
+  .ch-graph-svg circle.dot-broken { fill: #ef4444; opacity: 0.85; }
+  .ch-graph-svg circle.dot-impact { fill: #f97316; opacity: 0.55; }
+  .ch-graph-svg circle.dot-deep   { fill: var(--red); opacity: 0.3; }
+
+  /* ── Graph columns ── */
+  .ch-graph-col {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    z-index: 2;
+    min-width: 200px;
+  }
+  .ch-graph-col-label {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+
+  /* ── Graph nodes ── */
+  .ch-gnode {
+    background: var(--surface);
+    border: 1.5px solid var(--green);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: all 0.15s;
+    position: relative;
+  }
+  .ch-gnode:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(34,197,94,0.15);
+  }
+  .ch-gnode.upstream-dep {
+    border-color: var(--cyan);
+    border-style: dashed;
+    opacity: 0.55;
+  }
+  .ch-gnode.upstream-dep:hover { opacity: 0.9; box-shadow: 0 4px 12px rgba(34,211,238,0.15); }
+  .ch-gnode.unstaged { border-color: #eab308; }
+  .ch-gnode.unstaged:hover { box-shadow: 0 4px 16px rgba(234,179,8,0.15); }
+  .ch-gnode.breaking { border-color: #f97316; }
+  .ch-gnode.breaking:hover { box-shadow: 0 4px 16px rgba(249,115,22,0.25); }
+  .ch-gnode.deleted  { border-color: #ef4444; border-width: 2px; }
+  .ch-gnode.deleted:hover  { box-shadow: 0 4px 16px rgba(239,68,68,0.3); }
+  /* BROKEN = a non-changed function that still calls a DELETED function — will fail at runtime */
+  .ch-gnode.broken {
+    border-color: #ef4444;
+    border-width: 2px;
+    border-style: solid;
+    background: rgba(239,68,68,0.06);
+  }
+  .ch-gnode.broken:hover { box-shadow: 0 4px 16px rgba(239,68,68,0.3); opacity: 1; }
+  .ch-gnode.affected {
+    border-color: rgba(249,115,22,0.55);
+    border-style: dashed;
+    opacity: 0.85;
+  }
+  .ch-gnode.affected:hover { opacity: 1; box-shadow: 0 4px 12px rgba(249,115,22,0.15); }
+  .ch-gnode.affected-h2 {
+    border-color: rgba(239,68,68,0.32);
+    border-style: dashed;
+    opacity: 0.6;
+  }
+  .ch-gnode.affected-h2:hover { opacity: 0.9; }
+  .ch-gnode.affected-h3p {
+    border-color: rgba(239,68,68,0.2);
+    border-style: dashed;
+    opacity: 0.42;
+  }
+  .ch-gnode.affected-h3p:hover { opacity: 0.75; }
+  .ch-gnode.highlight {
+    box-shadow: 0 0 0 2px var(--blue), 0 4px 20px rgba(59,130,246,0.2);
+  }
+  .ch-gnode .gn-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ch-gnode .gn-file {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--text-dim);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ch-gnode .gn-badge {
+    position: absolute;
+    top: -8px; right: -8px;
+    background: var(--surface);
+    border: 1.5px solid var(--red);
+    border-radius: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--red);
+    padding: 1px 6px;
+    line-height: 14px;
+  }
+  .ch-hop {
+    position: absolute;
+    bottom: -8px; right: 8px;
+    background: var(--surface);
+    border: 1px solid rgba(249,115,22,0.4);
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8px;
+    font-weight: 700;
+    color: rgba(249,115,22,0.9);
+    padding: 0 5px;
+    line-height: 14px;
+    white-space: nowrap;
+  }
+  /* Badge shown on caller graph nodes when their call site passes a wrong type */
+  .gn-type-badge {
+    position: absolute;
+    top: -8px; left: -8px;
+    background: var(--surface);
+    border: 1px solid rgba(234,179,8,0.55);
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8px;
+    font-weight: 700;
+    color: #eab308;
+    padding: 0 5px;
+    line-height: 14px;
+  }
+  /* Type-change lines in the change card */
+  .ch-type-changes {
+    padding: 0 20px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .ch-type-item {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: #eab308;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .ch-type-item .ti-label,
+  .ti-label {
+    font-size: 8px;
+    font-weight: 700;
+    background: rgba(234,179,8,0.1);
+    border: 1px solid rgba(234,179,8,0.3);
+    border-radius: 3px;
+    padding: 0 4px;
+    color: #eab308;
+    flex-shrink: 0;
+    display: inline-block;
+    margin-right: 4px;
+  }
+  /* Impact section header for type mismatches */
+  .ch-impact-section {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+    margin-top: 10px;
+    margin-bottom: 6px;
+  }
+  .ch-impact-section.broken  { color: #ef4444; }
+  .ch-impact-section.type    { color: #eab308; }
+  .ch-impact-section.affected{ color: var(--red); }
+
+  /* ── Impact footer ── */
+  .ch-impact {
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+    max-height: 220px;
+    overflow-y: auto;
+    background: rgba(17,24,39,0.3);
+  }
+  .ch-impact-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--red);
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+  .ch-impact-item {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    padding: 3px 0;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+  }
+  .ch-impact-item .imp-arrow { color: var(--red); opacity: 0.45; font-size: 10px; }
+  .ch-impact-item .imp-hop {
+    font-size: 8px;
+    background: rgba(249,115,22,0.1);
+    border: 1px solid rgba(249,115,22,0.25);
+    color: rgba(249,115,22,0.9);
+    border-radius: 4px;
+    padding: 0 4px;
+  }
+
+  .ch-empty {
+    padding: 80px 20px;
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .ch-empty a { color: var(--green); }
+
+  .ch-graph-empty {
+    padding: 60px 20px;
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+    z-index: 2;
+  }
+
+  /* ── Node detail panel (slides in from the right over the graph) ── */
+  .nd-panel {
+    position: absolute;
+    top: 0; right: 0;
+    width: 420px;
+    max-width: 100%;
+    height: 100%;
+    background: var(--bg);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    z-index: 20;
+    transform: translateX(100%);
+    transition: transform 0.2s ease;
+    box-shadow: -8px 0 32px rgba(0,0,0,0.4);
+  }
+  .nd-panel.open { transform: translateX(0); }
+
+  .nd-panel-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(17,24,39,0.5);
+    flex-shrink: 0;
+  }
+  .nd-panel-title { flex: 1; min-width: 0; }
+  .nd-fn-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .nd-fn-file {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--text-dim);
+    margin-top: 3px;
+    display: block;
+  }
+  .nd-close {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-dim);
+    font-size: 16px;
+    width: 26px; height: 26px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.1s;
+  }
+  .nd-close:hover { border-color: var(--red); color: var(--red); }
+
+  .nd-issues {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    flex-shrink: 0;
+    max-height: 120px;
+    overflow-y: auto;
+    background: rgba(239,68,68,0.04);
+  }
+  .nd-issue-row {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: #f87171;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .nd-issue-row.warn { color: #f97316; }
+  .nd-issue-icon { flex-shrink: 0; font-size: 11px; }
+  .nd-no-issues {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .nd-source {
+    flex: 1;
+    overflow: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    line-height: 1.6;
+  }
+  .nd-source-empty {
+    padding: 24px 16px;
+    color: var(--text-dim);
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    font-style: italic;
+  }
+  .nd-line {
+    display: flex;
+    gap: 0;
+    position: relative;
+  }
+  .nd-line:hover { background: rgba(255,255,255,0.02); }
+  .nd-line.nd-broken {
+    background: rgba(239,68,68,0.22);
+    border-left: 3px solid #ef4444;
+  }
+  .nd-line.nd-warn {
+    background: rgba(249,115,22,0.15);
+    border-left: 3px solid #f97316;
+  }
+
+  /* Python syntax highlight colors (VS Code Dark+) */
+  .hl-kw  { color: #569cd6; }
+  .hl-cf  { color: #c586c0; }
+  .hl-str { color: #ce9178; }
+  .hl-cm  { color: #6a9955; font-style: italic; }
+  .hl-num { color: #b5cea8; }
+  .hl-fn  { color: #dcdcaa; }
+  .hl-val { color: #569cd6; }
+  .hl-tp  { color: #4ec9b0; }
+  .hl-bi  { color: #4ec9b0; }
+  .hl-sf  { color: #9cdcfe; }
+  .hl-op  { color: #d4d4d4; }
+  .hl-dec { color: #dcdcaa; }
+  .nd-ln {
+    width: 42px;
+    text-align: right;
+    padding: 0 10px 0 6px;
+    color: var(--text-dim);
+    user-select: none;
+    flex-shrink: 0;
+    opacity: 0.5;
+  }
+  .nd-line.nd-broken .nd-ln,
+  .nd-line.nd-warn   .nd-ln { opacity: 0.9; }
+  .nd-code {
+    white-space: pre;
+    color: var(--text);
+    padding: 0 12px 0 0;
+    flex: 1;
+  }
+  .nd-break-marker {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 9px;
+    font-weight: 700;
+    background: rgba(239,68,68,0.2);
+    border: 1px solid rgba(239,68,68,0.4);
+    border-radius: 3px;
+    color: #f87171;
+    padding: 0 4px;
+    line-height: 14px;
+  }
+{% endblock %}
+
+{% block body %}
+<nav class="navbar">
+  <div class="navbar-brand">
+    <a href="/dashboard" style="color:var(--text-dim);text-decoration:none;font-size:13px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;"><path d="m15 18-6-6 6-6"/></svg>
+      Dashboard
+    </a>
+    <span style="color:var(--border);">/</span>
+    <a href="/lineage-ui?repo={{ repo }}&branch={{ branch }}" style="color:var(--text-dim);text-decoration:none;font-size:13px;">Functions</a>
+    <span style="color:var(--border);">/</span>
+    Changes
+  </div>
+</nav>
+
+<div id="ch-loading" class="ch-empty">
+  <div class="spinner"></div>
+  Loading changes&hellip;
+</div>
+
+<div id="ch-empty-page" class="ch-empty" style="display:none;">
+  No changes yet.<br>
+  <a href="javascript:history.back()">Go back</a>, edit a function, and click Save.
+</div>
+
+<div id="changes-page" class="ch-page" style="display:none;">
+  <!-- LEFT: change list -->
+  <div class="ch-left" id="ch-left">
+    <div class="ch-stats" id="ch-stats"></div>
+    <div id="ch-list"></div>
+  </div>
+
+  <!-- RIGHT: impact graph -->
+  <div class="ch-right" style="position:relative;">
+    <div class="ch-graph-header">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
+      <span id="graph-header-text">Impact Graph &mdash; transitive blast radius</span>
+      <span id="graph-filter-badge" style="display:none;margin-left:10px;font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.3);color:var(--blue);cursor:pointer;" title="Click to show all">focused &times;</span>
+    </div>
+    <div class="ch-legend">
+      <div class="ch-legend-item"><span class="ch-legend-swatch deleted" style="border-color:#ef4444;background:rgba(239,68,68,0.18);border-width:2px;"></span>DELETED — function removed</div>
+      <div class="ch-legend-item"><span class="ch-legend-swatch broken"></span>BROKEN — still calls deleted function → WILL fail</div>
+      <div class="ch-legend-item"><span class="ch-legend-swatch breaking"></span>BREAKING — signature changed</div>
+      <div class="ch-legend-item"><span class="ch-legend-swatch modified"></span>MODIFIED — body only</div>
+      <div class="ch-legend-item"><span class="ch-legend-swatch hop1"></span>may be affected (hop 1+)</div>
+    </div>
+    <div class="ch-graph-viewport" id="ch-graph-viewport">
+      <div class="ch-graph-plane" id="ch-graph-plane">
+        <svg class="ch-graph-svg" id="ch-graph-svg"></svg>
+      </div>
+    </div>
+    <div class="ch-impact" id="ch-impact" style="display:none;"></div>
+    <!-- Node detail panel: slides in when a graph node is clicked -->
+    <div id="nd-panel" class="nd-panel">
+      <div class="nd-panel-header">
+        <div class="nd-panel-title">
+          <span class="nd-fn-name" id="nd-fn-name"></span>
+          <span class="nd-fn-file" id="nd-fn-file"></span>
+        </div>
+        <button class="nd-close" onclick="closeNodePanel()">&#215;</button>
+      </div>
+      <div id="nd-issues"></div>
+      <div class="nd-source" id="nd-source"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/*
+ * ═══════════════════════════════════════════════════════════════════════════
+ * HOW IMPACT ANALYSIS WORKS
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * STEP 1 — SEVERITY DETECTION (per changed function):
+ *   We parse the `def` line from both the original and edited source using:
+ *     /^\s*(?:async\s+)?def\s+\w+\s*\(([^)]*)\)/m
+ *   Parameter names are extracted by splitting on commas, then stripping
+ *   type annotations (`:` suffix), default values (`=` suffix), and `*`/`**`
+ *   prefixes. `self` and `cls` are ignored (not visible to callers).
+ *
+ *   Severity levels:
+ *     DELETED  — no `def` line found in edited source
+ *                → function removed; every caller in the graph WILL break
+ *     BREAKING — params were added or removed vs the original signature
+ *                → callers with wrong argument count/names WILL break
+ *     MODIFIED — only the function body changed, signature intact
+ *                → callers may see different behavior but won't crash
+ *
+ *   Limitation: regex-based, not a full AST. Multi-line `def` signatures
+ *   (parameters spanning multiple lines) or parentheses inside default
+ *   values may parse incorrectly. Rename-only param changes are not caught
+ *   unless positional usage is ruled out.
+ *
+ * STEP 2 — TRANSITIVE IMPACT BFS (up to MAX_HOPS=4, MAX_NODES=60):
+ *   Starting from each changed function's direct downstream callers (hop 1),
+ *   we iteratively fetch the downstream callers of each affected function
+ *   (hop 2, 3, …). A function is placed at its minimum hop distance.
+ *   Already-fetched nodes are served from `nodeCache` without a new API call.
+ *
+ *   A node at hop N is "affected" because:
+ *     - It calls a function at hop N-1 (or a changed function for hop 1)
+ *     - That called function has changed or is itself affected
+ *
+ * STEP 3 — BREAKAGE INFERENCE:
+ *   The graph does NOT re-run code or check call sites. It infers likely
+ *   breakage based on:
+ *     - BREAKING/DELETED cause → callers at hop 1 are likely broken
+ *     - MODIFIED cause → callers at hop 1 may see unexpected behavior
+ *     - Hop 2+ nodes: transitively at risk if the hop-1 layer breaks
+ *
+ *   To confirm actual breakage you would need to: (a) run your test suite,
+ *   or (b) check that each call site passes the correct new arguments.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+var repo      = "{{ repo }}";
+var branch    = "{{ branch }}";
+var STORE_KEY = "code-crawler-changes";
+
+var MAX_HOPS  = 4;   /* how many hops to follow in transitive BFS */
+var MAX_NODES = 60;  /* max affected nodes to fetch before stopping */
+
+/* ── sessionStorage helpers ── */
+function loadAllChanges() {
+  try { return JSON.parse(sessionStorage.getItem(STORE_KEY)) || {}; } catch(e) { return {}; }
+}
+function saveAllChanges(obj) {
+  sessionStorage.setItem(STORE_KEY, JSON.stringify(obj));
+}
+
+/* ── Utility ── */
+function pn(name) {
+  var p = (name || "").split(".");
+  return { f: p[p.length - 1], m: p.slice(0, -1).join(".") };
+}
+function esc(s) { var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+function escHtml(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+function escAttr(s) { return s.replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+
+/* ── Line diff (LCS) ── */
+function lineDiff(oldText, newText) {
+  var oldL = oldText.split("\n"), newL = newText.split("\n");
+  var m = oldL.length, n = newL.length;
+  if (m + n > 2000) return simpleDiff(oldL, newL);
+
+  var dp = [];
+  for (var i = 0; i <= m; i++) {
+    dp[i] = new Array(n + 1);
+    for (var j = 0; j <= n; j++) {
+      if (i === 0 || j === 0) dp[i][j] = 0;
+      else if (oldL[i-1] === newL[j-1]) dp[i][j] = dp[i-1][j-1] + 1;
+      else dp[i][j] = Math.max(dp[i-1][j], dp[i][j-1]);
+    }
+  }
+  var ops = [], i = m, j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && oldL[i-1] === newL[j-1]) { ops.push({type:"ctx",text:oldL[--i]}); j--; }
+    else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) { ops.push({type:"add",text:newL[--j]}); }
+    else { ops.push({type:"del",text:oldL[--i]}); }
+  }
+  ops.reverse();
+
+  var keep = [];
+  for (var k = 0; k < ops.length; k++) {
+    if (ops[k].type !== "ctx")
+      for (var c = Math.max(0,k-3); c <= Math.min(ops.length-1,k+3); c++) keep[c] = true;
+  }
+  var result = [], prev = false;
+  for (var k = 0; k < ops.length; k++) {
+    if (keep[k]) { result.push(ops[k]); prev = true; }
+    else if (prev) { result.push({type:"sep"}); prev = false; }
+  }
+  return result;
+}
+function simpleDiff(a, b) {
+  var r = [], max = Math.max(a.length, b.length);
+  for (var i = 0; i < max; i++) {
+    var o = i < a.length ? a[i] : undefined, n = i < b.length ? b[i] : undefined;
+    if (o === n) r.push({type:"ctx",text:o});
+    else { if (o !== undefined) r.push({type:"del",text:o}); if (n !== undefined) r.push({type:"add",text:n}); }
+  }
+  return r;
+}
+
+/* ── API fetch (cached) ── */
+var nodeCache = {};
+function fetchNode(id) {
+  if (nodeCache[id]) return Promise.resolve(nodeCache[id]);
+  return fetch("/lineage-node?" + new URLSearchParams({repo:repo, branch:branch, asset_id:id}))
+    .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function(d) { nodeCache[id] = d; return d; })
+    .catch(function() { return null; });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SEVERITY ANALYSIS
+   ═══════════════════════════════════════════════════════════════ */
+
+/*
+ * parseSignature(src)
+ * Finds the first `def` line in `src` and returns an array of parameter
+ * names (excluding self/cls). Returns null if no def line is found
+ * (function deleted). Returns [] for zero-parameter functions.
+ *
+ * Handles: type annotations (:), defaults (=), *args, **kwargs.
+ * Does NOT handle: multi-line def signatures.
+ */
+function parseSignature(src) {
+  var m = src.match(/^\s*(?:async\s+)?def\s+\w+\s*\(([^)]*)\)/m);
+  if (!m) return null;
+  var raw = m[1].trim();
+  if (!raw) return [];
+  return raw.split(",").map(function(p) {
+    return p.trim().replace(/^\*+/, "").split(/[=:]/)[0].trim();
+  }).filter(function(p) { return p && p !== "self" && p !== "cls"; });
+}
+
+/*
+ * parseSignatureDetailed(src)
+ * Like parseSignature but also captures whether each parameter has a default
+ * value (i.e., is optional). Returns [{name, hasDefault}] or null.
+ * Uses splitArgs for correct handling of complex defaults like x={"a":1}.
+ */
+function parseSignatureDetailed(src) {
+  var m = src.match(/^\s*(?:async\s+)?def\s+\w+\s*\(([^)]*)\)/m);
+  if (!m) return null;
+  var raw = m[1].trim();
+  if (!raw) return [];
+  return splitArgs(raw).map(function(p) {
+    var stripped   = p.trim().replace(/^\*+/, "").trim();
+    var hasDefault = stripped.indexOf("=") >= 0;
+    var name       = stripped.split(/[=:]/)[0].trim();
+    return { name: name, hasDefault: hasDefault };
+  }).filter(function(p) { return p.name && p.name !== "self" && p.name !== "cls"; });
+}
+
+/*
+ * analyzeChange(id)
+ * Compares the function signature in original vs edited source and returns:
+ *   { severity: "deleted"|"breaking"|"modified",
+ *     label: string,
+ *     detail: string,
+ *     removed:       string[],   param names removed from signature
+ *     addedRequired: string[],   new required params (no default) — callers must pass them
+ *     addedOptional: string[] }  new optional params (have defaults) — backward compatible
+ *
+ * KEY: added params WITH defaults are NOT breaking — existing callers still work.
+ * Only removed params and added required params are flagged as BREAKING.
+ */
+function analyzeChange(id) {
+  var ch = changes[id];
+  if (!ch) return { severity: "modified", label: "MODIFIED", detail: "",
+                    removed: [], addedRequired: [], addedOptional: [] };
+
+  var origSig = parseSignatureDetailed(ch.original);
+  var newSig  = parseSignatureDetailed(ch.edited);
+
+  if (origSig !== null && newSig === null) {
+    return {
+      severity: "deleted",
+      label: "DELETED",
+      detail: "Function definition removed — all callers will fail",
+      removed: [], addedRequired: [], addedOptional: []
+    };
+  }
+
+  if (origSig !== null && newSig !== null) {
+    var origMap = {}, newMap = {};
+    origSig.forEach(function(p) { origMap[p.name] = p; });
+    newSig.forEach(function(p)  { newMap[p.name]  = p; });
+
+    var removed       = origSig.filter(function(p) { return !newMap[p.name]; });
+    var added         = newSig.filter(function(p)  { return !origMap[p.name]; });
+    var addedRequired = added.filter(function(p) { return !p.hasDefault; });
+    var addedOptional = added.filter(function(p) { return  p.hasDefault; });
+
+    var removedNames       = removed.map(function(p) { return p.name; });
+    var addedRequiredNames = addedRequired.map(function(p) { return p.name; });
+    var addedOptionalNames = addedOptional.map(function(p) { return p.name; });
+
+    if (removedNames.length || addedRequiredNames.length) {
+      var parts = [];
+      if (removedNames.length)
+        parts.push("removed: " + removedNames.join(", "));
+      if (addedRequiredNames.length)
+        parts.push("added (required): " + addedRequiredNames.join(", "));
+      return {
+        severity:      "breaking",
+        label:         "BREAKING",
+        detail:        "Signature changed — " + parts.join("; "),
+        removed:       removedNames,
+        addedRequired: addedRequiredNames,
+        addedOptional: addedOptionalNames
+      };
+    }
+
+    if (addedOptionalNames.length) {
+      return {
+        severity:      "modified",
+        label:         "MODIFIED",
+        detail:        "Added optional param(s) with defaults — backward compatible: " +
+                       addedOptionalNames.join(", "),
+        removed:       [],
+        addedRequired: [],
+        addedOptional: addedOptionalNames
+      };
+    }
+  }
+
+  return {
+    severity:      "modified",
+    label:         "MODIFIED",
+    detail:        "Implementation changed, signature intact",
+    removed:       [],
+    addedRequired: [],
+    addedOptional: []
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * TYPE CHANGE ANALYSIS  (3 levels)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * LEVEL 1 — Type annotation diff (high confidence):
+ *   Parses `-> ReturnType` and `param: Type` from the function's `def` line
+ *   in both original and edited source. If annotations differ, we know for
+ *   certain that the type contract changed. Any caller relying on the old
+ *   type will break.
+ *
+ *   Example:
+ *     def process(data: str) -> int:   ← original
+ *     def process(data: bytes) -> str: ← edited
+ *   → param "data" type: str → bytes
+ *   → return type: int → str
+ *
+ * LEVEL 2 — Return literal inference (heuristic, no annotations required):
+ *   Scans `return` statements for Python literals (`"hello"`, `42`, `True`,
+ *   `[...]`, `{...}`). If the dominant return type changes between original
+ *   and edited (e.g., all string returns become integer returns), we infer
+ *   a type change even without explicit annotations. Only reported when
+ *   Level 1 didn't already catch it via annotations.
+ *
+ *   Example:
+ *     - return "ok"   →  + return 1
+ *   → inferred return: str → int
+ *
+ * LEVEL 3 — Call-site argument type checking (cross-reference):
+ *   For each downstream caller whose source is available, we find every call
+ *   to the changed function, extract the actual argument values, infer their
+ *   types from literals, and compare against the new parameter type
+ *   annotations. If a caller passes a `str` where the function now expects
+ *   `int`, it's flagged as a type mismatch.
+ *
+ *   Example (caller source):
+ *     result = process("hello")   ← passes str, but process now expects bytes
+ *   → TYPE MISMATCH: "data" expected bytes, got str
+ *
+ * LIMITATIONS:
+ *   - Only literal values are typed (42, "hi", True, [], {}). Variables,
+ *     function calls, and expressions are skipped (type unknown).
+ *   - Multi-line `def` signatures are not parsed.
+ *   - Type compatibility is simplified: int/bool/float hierarchy is handled,
+ *     but complex generics like `Union[str, bytes]` are only partially checked.
+ *   - Level 3 only fires when the caller's source is already in nodeCache
+ *     (i.e., the caller was crawled and its source stored in the DB).
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/*
+ * splitArgs(raw)
+ * Splits a comma-separated argument string while respecting nested
+ * parentheses, brackets, and braces.
+ *   splitArgs("a, fn(b, c), d") → ["a", "fn(b, c)", "d"]
+ */
+function splitArgs(raw) {
+  var args = [], depth = 0, cur = "", inStr = false, strChar = "";
+  for (var i = 0; i < raw.length; i++) {
+    var c = raw[i];
+    if (inStr) {
+      cur += c;
+      if (c === strChar && raw[i-1] !== "\\") inStr = false;
+    } else if (c === '"' || c === "'") {
+      inStr = true; strChar = c; cur += c;
+    } else if (c === "(" || c === "[" || c === "{") {
+      depth++; cur += c;
+    } else if (c === ")" || c === "]" || c === "}") {
+      depth--; cur += c;
+    } else if (c === "," && depth === 0) {
+      args.push(cur.trim()); cur = "";
+    } else {
+      cur += c;
+    }
+  }
+  if (cur.trim()) args.push(cur.trim());
+  return args;
+}
+
+/*
+ * inferLiteralType(val)
+ * Returns the Python type name for a literal expression string, or null
+ * if the value is a variable/expression whose type cannot be determined.
+ *   "42"     → "int"
+ *   '"hello"' → "str"
+ *   "True"   → "bool"
+ *   "None"   → "None"
+ *   "[1,2]"  → "list"
+ *   "x + 1"  → null  (expression, unknown)
+ */
+function inferLiteralType(val) {
+  val = (val || "").trim();
+  if (!val || val === "None") return "None";
+  if (val === "True" || val === "False") return "bool";
+  if (/^-?\d+$/.test(val)) return "int";
+  if (/^-?\d*\.\d+$/.test(val)) return "float";
+  if (/^[fFbBrRuU]{0,2}["']/.test(val)) return "str";
+  if (val[0] === "[") return "list";
+  if (val[0] === "{" && !val.includes(":")) return "set";
+  if (val[0] === "{") return "dict";
+  if (val[0] === "(") return "tuple";
+  return null; /* variable or expression — type unknown */
+}
+
+/*
+ * typesCompatible(passed, expected)
+ * Returns true if a value of type `passed` is acceptable where `expected`
+ * is required. Handles Optional[X], Union[X,Y], and Python subtype rules
+ * (bool ⊂ int ⊂ float).
+ */
+function typesCompatible(passed, expected) {
+  if (!passed || !expected) return true;
+  var exp = expected.replace(/\s/g, "");
+  /* Optional[X] → X or None */
+  var optM = exp.match(/^Optional\[(.+)\]$/);
+  if (optM) return passed === "None" || typesCompatible(passed, optM[1]);
+  /* Union[X,Y,...] */
+  var uniM = exp.match(/^Union\[(.+)\]$/);
+  if (uniM) {
+    return splitArgs(uniM[1]).some(function(t) { return typesCompatible(passed, t); });
+  }
+  if (passed === exp) return true;
+  /* Python numeric hierarchy */
+  if (passed === "bool"  && (exp === "int" || exp === "float")) return true;
+  if (passed === "int"   && exp === "float") return true;
+  /* Generic containers: list matches List[X], etc. */
+  if (passed === "list"  && /^[Ll]ist/.test(exp))  return true;
+  if (passed === "dict"  && /^[Dd]ict/.test(exp))  return true;
+  if (passed === "tuple" && /^[Tt]uple/.test(exp)) return true;
+  if (passed === "set"   && /^[Ss]et/.test(exp))   return true;
+  return false;
+}
+
+/*
+ * parseTypeAnnotations(src)
+ * Parses the first `def` line and returns:
+ *   { name, params: [{name, type, default}], returnType }
+ * Returns null if no def line found.
+ */
+function parseTypeAnnotations(src) {
+  if (!src) return null;
+  var defMatch = src.match(/^\s*(?:async\s+)?def\s+(\w+)\s*\(([^)]*)\)\s*(?:->\s*(.+?))?\s*:/m);
+  if (!defMatch) return null;
+  var returnType = defMatch[3] ? defMatch[3].trim() : null;
+  var params = splitArgs(defMatch[2] || "").map(function(p) {
+    p = p.trim().replace(/^\*+/, "");
+    var name = p.split(/[:=]/)[0].trim();
+    if (!name || name === "self" || name === "cls") return null;
+    var colonIdx = p.indexOf(":");
+    var eqIdx    = p.indexOf("=");
+    var typeStr  = null;
+    if (colonIdx > -1) {
+      typeStr = (eqIdx > colonIdx ? p.slice(colonIdx+1, eqIdx) : p.slice(colonIdx+1)).trim();
+    }
+    return { name: name, type: typeStr };
+  }).filter(Boolean);
+  return { name: defMatch[1], params: params, returnType: returnType };
+}
+
+/*
+ * inferReturnTypes(src)
+ * Scans all `return` statements and returns an array of inferred type names
+ * for any that use literal values.
+ */
+function inferReturnTypes(src) {
+  if (!src) return [];
+  var types = {};
+  (src.match(/^\s*return\s+(.+)/mg) || []).forEach(function(m) {
+    var val = m.replace(/^\s*return\s+/, "").replace(/\s*#.*$/, "").trim();
+    var t = inferLiteralType(val);
+    if (t && t !== "None") types[t] = true;
+  });
+  return Object.keys(types);
+}
+
+/*
+ * detectTypeChanges(id)
+ * Runs Level 1 (annotation diff) + Level 2 (literal inference) for a
+ * changed function. Returns an array of type change issue objects:
+ *   { level, kind, from, to, detail }
+ */
+function detectTypeChanges(id) {
+  var ch = changes[id];
+  if (!ch) return [];
+  var issues = [];
+
+  var origAnnot = parseTypeAnnotations(ch.original);
+  var newAnnot  = parseTypeAnnotations(ch.edited);
+
+  /* Level 1: annotation comparison */
+  if (origAnnot && newAnnot) {
+    if (origAnnot.returnType && newAnnot.returnType &&
+        origAnnot.returnType !== newAnnot.returnType) {
+      issues.push({ level:1, kind:"return-type",
+        from: origAnnot.returnType, to: newAnnot.returnType,
+        detail: "return " + origAnnot.returnType + " → " + newAnnot.returnType });
+    }
+    var origPMap = {};
+    origAnnot.params.forEach(function(p) { origPMap[p.name] = p; });
+    newAnnot.params.forEach(function(p) {
+      var orig = origPMap[p.name];
+      if (orig && orig.type && p.type && orig.type !== p.type) {
+        issues.push({ level:1, kind:"param-type", param: p.name,
+          from: orig.type, to: p.type,
+          detail: '"' + p.name + '": ' + orig.type + " → " + p.type });
+      }
+    });
+  }
+
+  /* Level 2: return literal inference (only if Level 1 didn't catch it) */
+  var hasReturnAnnotChange = issues.some(function(i) { return i.kind === "return-type"; });
+  if (!hasReturnAnnotChange) {
+    var origR = inferReturnTypes(ch.original);
+    var newR  = inferReturnTypes(ch.edited);
+    var lost  = origR.filter(function(t) { return newR.indexOf(t) < 0; });
+    var gained = newR.filter(function(t) { return origR.indexOf(t) < 0; });
+    if (lost.length && gained.length) {
+      issues.push({ level:2, kind:"inferred-return",
+        from: origR.join("|"), to: newR.join("|"),
+        detail: "inferred return: " + origR.join("|") + " → " + newR.join("|") });
+    }
+  }
+
+  return issues;
+}
+
+/*
+ * checkCallSite(callerSource, funcName, newAnnot)
+ * Level 3: scans `callerSource` for calls to `funcName`, extracts literal
+ * arguments, and checks them against `newAnnot`'s parameter types.
+ * Returns an array of mismatch objects:
+ *   { param, expected, got, arg }
+ */
+function checkCallSite(callerSource, funcName, newAnnot) {
+  if (!callerSource || !newAnnot) return [];
+  var annotatedParams = newAnnot.params.filter(function(p) { return p.type; });
+  if (!annotatedParams.length) return [];
+
+  var issues = [];
+  var escaped = funcName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  var callRe  = new RegExp("(?:^|[^\\w])" + escaped + "\\s*\\(", "gm");
+  var m;
+
+  while ((m = callRe.exec(callerSource)) !== null) {
+    /* Extract the argument list by counting parens */
+    var start = m.index + m[0].length;
+    var depth = 1, i = start, raw = "";
+    while (i < callerSource.length && depth > 0) {
+      var c = callerSource[i];
+      if      (c === "(") depth++;
+      else if (c === ")") { depth--; if (depth === 0) break; }
+      raw += c; i++;
+    }
+    var args = splitArgs(raw);
+
+    annotatedParams.forEach(function(param, pi) {
+      /* Find the argument for this parameter: keyword first, then positional */
+      var argVal = null;
+      for (var ai = 0; ai < args.length; ai++) {
+        var kw = args[ai].match(/^(\w+)\s*=/);
+        if (kw && kw[1] === param.name) {
+          argVal = args[ai].slice(args[ai].indexOf("=") + 1).trim();
+          break;
+        }
+      }
+      if (!argVal && pi < args.length && !/^\w+\s*=/.test(args[pi])) {
+        argVal = args[pi];
+      }
+      if (!argVal) return;
+
+      var passed = inferLiteralType(argVal);
+      if (passed && !typesCompatible(passed, param.type)) {
+        issues.push({
+          param:    param.name,
+          expected: param.type,
+          got:      passed,
+          arg:      argVal.length > 24 ? argVal.slice(0, 24) + "…" : argVal
+        });
+      }
+    });
+  }
+  return issues;
+}
+
+/*
+ * checkCallSiteArgs(source, funcName, removedParams, addedRequired)
+ * Checks whether callers of `funcName` in `source` are broken due to
+ * signature changes:
+ *   removedParams  — param names that were removed; broken if caller still passes them as kwargs
+ *   addedRequired  — new required param names (no default); broken if caller doesn't pass them
+ *
+ * Returns an array of issue objects:
+ *   { kind: "sig-removed"|"sig-missing", param, detail }
+ *
+ * Note: only keyword-argument usage is checked. Positional-only usage
+ * falls back to "unverified" (cannot determine without full type inference).
+ */
+function checkCallSiteArgs(source, funcName, removedParams, addedRequired) {
+  if (!source || (!removedParams.length && !addedRequired.length)) return [];
+
+  var issues  = [];
+  var escaped = funcName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  var callRe  = new RegExp("(?:^|[^\\w])" + escaped + "\\s*\\(", "gm");
+  var m;
+
+  while ((m = callRe.exec(source)) !== null) {
+    var start = m.index + m[0].length;
+    var depth = 1, i = start, raw = "";
+    while (i < source.length && depth > 0) {
+      var c = source[i];
+      if (c === "(") depth++;
+      else if (c === ")") { depth--; if (depth === 0) break; }
+      raw += c; i++;
+    }
+    var args    = splitArgs(raw);
+    var kwNames = args.map(function(a) {
+      var kw = a.match(/^(\w+)\s*=/);
+      return kw ? kw[1] : null;
+    }).filter(Boolean);
+
+    /* Removed param still passed as keyword → broken */
+    removedParams.forEach(function(pname) {
+      if (kwNames.indexOf(pname) >= 0 &&
+          !issues.some(function(x) { return x.kind === "sig-removed" && x.param === pname; })) {
+        issues.push({
+          kind:   "sig-removed",
+          param:  pname,
+          detail: 'removed param "' + pname + '" still passed by this caller'
+        });
+      }
+    });
+
+    /* New required param not found as keyword → likely broken */
+    addedRequired.forEach(function(pname) {
+      if (kwNames.indexOf(pname) < 0 &&
+          !issues.some(function(x) { return x.kind === "sig-missing" && x.param === pname; })) {
+        issues.push({
+          kind:   "sig-missing",
+          param:  pname,
+          detail: 'new required param "' + pname + '" not passed by this caller'
+        });
+      }
+    });
+  }
+
+  return issues;
+}
+
+/* ── Type impact globals ── */
+var callerTypeIssues = {};  /* callerId → [issue] — only missed/inconsistent callers */
+var changedTypeInfo  = {};  /* changedId → { typeChanges, summary: {consistent,inconsistent,missed,unverified} } */
+var fullTypeImpact   = {};  /* changedId → { typeChanges, callers: { callerId → verdict-obj } } */
+
+/*
+ * analyzeFullImpact()
+ * ─────────────────────────────────────────────────────────────────────────
+ * Combines Levels 1, 2, and 3 into one unified verdict per caller.
+ *
+ * KEY INSIGHT: if a caller is ALSO in the `changes` set, we check their
+ * EDITED source (what will actually run), not the DB source. This means
+ * that if you changed a function's return type from int → str AND updated
+ * every caller in your change set to handle str, no false positives are
+ * raised. Only callers you forgot to update are flagged.
+ *
+ * Verdict per caller:
+ *   consistent   — caller is in changes AND their edited source is compatible
+ *                  with the new types. Change is self-consistent. ✓
+ *   inconsistent — caller is in changes BUT their edited source still passes
+ *                  the wrong type. They were updated but incorrectly. ✗
+ *   missed       — caller is NOT in changes and we detected a type mismatch.
+ *                  This call site needs to be updated. ⚠
+ *   unverified   — caller not in changes but we couldn't find a type mismatch
+ *                  (either no literal args or no type annotations to compare).
+ *                  May be fine, but cannot confirm automatically. ?
+ *
+ * Only `inconsistent` and `missed` callers are promoted to `callerTypeIssues`
+ * and shown as warnings. `consistent` callers produce a ✓ signal.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+function analyzeFullImpact() {
+  var result = {};
+
+  changeIds.forEach(function(changedId) {
+    var ch = changes[changedId];
+    if (!ch) return;
+
+    /* Run Level 1 + 2 to see if there are any type changes worth checking */
+    var tc       = detectTypeChanges(changedId);
+    var newAnnot = parseTypeAnnotations(ch.edited);
+    var hasTypes = newAnnot && newAnnot.params.some(function(p) { return p.type; });
+
+    /*
+     * Signature change analysis:
+     * Get removed params and added required params from analyzeChange().
+     * Added params WITH defaults are NOT included here — they are backward
+     * compatible and cannot break existing callers.
+     */
+    var sigChange     = analyzeChange(changedId);
+    var removedParams = sigChange.removed      || [];
+    var addedRequired = sigChange.addedRequired || [];
+    /* Only analyse sig changes when the function wasn't deleted (deletion
+     * is handled by the `broken` flag in buildTransitiveImpact). */
+    var hasSigChange  = sigChange.severity !== "deleted" &&
+                        (removedParams.length > 0 || addedRequired.length > 0);
+
+    /* Append signature meta-changes to the typeChanges array so they
+     * appear in the footer analysis section alongside type changes. */
+    if (hasSigChange) {
+      if (removedParams.length)
+        tc.push({ level: "S", kind: "sig-removed",
+          detail: "params removed: " + removedParams.join(", ") });
+      if (addedRequired.length)
+        tc.push({ level: "S", kind: "sig-added-required",
+          detail: "required params added: " + addedRequired.join(", ") });
+    }
+
+    if (!tc.length && !hasTypes && !hasSigChange) {
+      result[changedId] = { typeChanges: [], callers: {} };
+      return;
+    }
+
+    var d = nodeCache[changedId];
+    if (!d) { result[changedId] = { typeChanges: tc, callers: {} }; return; }
+
+    var funcName = pn(ch.name).f;
+    var callers  = {};
+
+    /* d.downstream = callers of this function (Atlan model — consumers that may break). */
+    d.downstream.forEach(function(callerNode) {
+      var cid           = callerNode.id;
+      var callerChanged = !!changes[cid];
+
+      /*
+       * Choose which source to check against:
+       *   — edited source  → if the caller is also being changed right now
+       *   — DB source      → if the caller is not in the change set
+       */
+      var source;
+      if (callerChanged) {
+        source = changes[cid].edited;
+      } else {
+        var cd = nodeCache[cid];
+        source = (cd && cd.node.source) ? cd.node.source : null;
+      }
+
+      /* Level 3: type annotation call-site check */
+      var typeIssues = source ? checkCallSite(source, funcName, newAnnot) : [];
+      /* Signature call-site check: were removed params still passed?
+       * Were new required params added to the call? */
+      var sigIssues  = source ? checkCallSiteArgs(source, funcName, removedParams, addedRequired) : [];
+      var allIssues  = typeIssues.concat(sigIssues);
+
+      var verdict;
+      if (!source) {
+        verdict = "unverified";
+      } else if (callerChanged) {
+        verdict = allIssues.length ? "inconsistent" : "consistent";
+      } else {
+        verdict = allIssues.length ? "missed" : "unverified";
+      }
+
+      callers[cid] = {
+        verdict:       verdict,
+        issues:        allIssues,
+        callerChanged: callerChanged,
+        node:          callerNode
+      };
+    });
+
+    result[changedId] = { typeChanges: tc, callers: callers };
+  });
+
+  return result;
+}
+
+/*
+ * computeTypeImpact()
+ * Runs analyzeFullImpact() and populates the display globals.
+ * Only `missed` and `inconsistent` callers go into callerTypeIssues
+ * (and become warnings). `consistent` callers contribute to the ✓ count.
+ */
+function computeTypeImpact() {
+  callerTypeIssues = {};
+  changedTypeInfo  = {};
+  fullTypeImpact   = analyzeFullImpact();
+
+  Object.keys(fullTypeImpact).forEach(function(changedId) {
+    var r = fullTypeImpact[changedId];
+    /* Tally verdict counts for card display */
+    var summary = { consistent: 0, inconsistent: 0, missed: 0, unverified: 0 };
+    Object.keys(r.callers).forEach(function(cid) {
+      var v = r.callers[cid].verdict;
+      summary[v] = (summary[v] || 0) + 1;
+      /* Populate callerTypeIssues for graph badges + impact footer */
+      if ((v === "missed" || v === "inconsistent") && r.callers[cid].issues.length) {
+        callerTypeIssues[cid] = r.callers[cid].issues;
+      }
+    });
+    changedTypeInfo[changedId] = { typeChanges: r.typeChanges, summary: summary };
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TRANSITIVE IMPACT BFS
+   ═══════════════════════════════════════════════════════════════ */
+
+var transitiveImpact   = {};  /* affectedId → { node, hop, causedBy:[ids] } */
+var transitiveEdges    = [];  /* { from, to, hop } */
+var upstreamDeps       = {};  /* depId → nodeData — direct callees of changed functions */
+var upstreamCallIssues = {};  /* changeId → [{depId, shortName, removedRequired:[], addedUnknown:[]}] */
+
+/*
+ * buildTransitiveImpact()
+ * BFS from each changed function's direct callers (Atlan-downstream consumers).
+ * Follows callers up to MAX_HOPS hops, fetching from /lineage-node as needed.
+ * Nodes already in nodeCache don't generate an API call.
+ * Returns a Promise that resolves when BFS is complete.
+ */
+function buildTransitiveImpact() {
+  var changedSet = {};
+  changeIds.forEach(function(id) { changedSet[id] = true; });
+
+  transitiveImpact = {};
+  transitiveEdges  = [];
+
+  var queue = [];  /* { id, hop } */
+
+  /* Seed: hop-1 = direct callers of every changed function.
+   *
+   * NOTE ON EDGE DIRECTION (API returns Atlan-correct labels since lineage_repo fix):
+   *   d.upstream   = callees / dependencies (what this function calls)
+   *   d.downstream = callers  / consumers   (what calls this function)
+   *
+   * Impact flows toward callers: if F changes, any function that calls F may break.
+   * So we traverse d.downstream (callers), NOT d.upstream (callees).
+   *
+   * `broken` = true when the cause is a DELETED function — these callers
+   * reference a function that no longer exists and WILL fail at runtime. */
+  changeIds.forEach(function(id) {
+    var d = nodeCache[id];
+    if (!d) return;
+    var causeDeleted = (analyzeChange(id).severity === "deleted");
+    d.downstream.forEach(function(nd) {
+      if (changedSet[nd.id]) return;
+      transitiveEdges.push({ from: id, to: nd.id, hop: 1, broken: causeDeleted });
+      if (!transitiveImpact[nd.id]) {
+        transitiveImpact[nd.id] = { node: nd, hop: 1, causedBy: [id], broken: causeDeleted };
+        if (Object.keys(transitiveImpact).length < MAX_NODES) {
+          queue.push({ id: nd.id, hop: 1, broken: causeDeleted });
+        }
+      } else {
+        if (transitiveImpact[nd.id].causedBy.indexOf(id) < 0)
+          transitiveImpact[nd.id].causedBy.push(id);
+        /* escalate to broken if any cause is deleted */
+        if (causeDeleted) transitiveImpact[nd.id].broken = true;
+      }
+    });
+  });
+
+  /* BFS continuation: follow callers of each affected node.
+   * `broken` propagates: if a function is broken (calls deleted code),
+   * its own callers transitively fail too. */
+  function step() {
+    if (!queue.length) return Promise.resolve();
+    var item = queue.shift();
+    if (item.hop >= MAX_HOPS) return step();
+    if (Object.keys(transitiveImpact).length >= MAX_NODES) return Promise.resolve();
+
+    return fetchNode(item.id).then(function(nd) {
+      if (!nd) return step();
+      nd.downstream.forEach(function(child) {  /* downstream = callers of this node (Atlan model) */
+        if (changedSet[child.id]) return;
+        var childBroken = item.broken; /* propagate broken state up the call chain */
+        transitiveEdges.push({ from: item.id, to: child.id, hop: item.hop + 1, broken: childBroken });
+        if (transitiveImpact[child.id]) {
+          if (transitiveImpact[child.id].causedBy.indexOf(item.id) < 0)
+            transitiveImpact[child.id].causedBy.push(item.id);
+          if (childBroken) transitiveImpact[child.id].broken = true;
+          return;
+        }
+        if (Object.keys(transitiveImpact).length >= MAX_NODES) return;
+        transitiveImpact[child.id] = { node: child, hop: item.hop + 1, causedBy: [item.id], broken: childBroken };
+        queue.push({ id: child.id, hop: item.hop + 1, broken: childBroken });
+      });
+      return step();
+    });
+  }
+
+  return step();
+}
+
+/*
+ * getKwArgsNearCall(src, fnName)
+ * Extracts keyword argument names passed to fnName in src.
+ * Scans up to 10 lines after each call site (handles multi-line calls).
+ */
+function getKwArgsNearCall(src, fnName) {
+  var lines  = src.split("\n");
+  var result = {};
+  var callIdxs = findCallLines(src, fnName);
+  callIdxs.forEach(function(lineIdx) {
+    var end = Math.min(lines.length - 1, lineIdx + 10);
+    for (var j = lineIdx; j <= end; j++) {
+      var line = lines[j];
+      /* Stop if we've left the call block (new statement starts) */
+      if (j > lineIdx && /^\s*(def |class |return |if |for |while |try:|except|finally:)/.test(line)) break;
+      /* Extract  name=  patterns (keyword args) */
+      var re = /\b(\w+)\s*=/g, m;
+      while ((m = re.exec(line)) !== null) {
+        if (m[1] !== fnName && m[1] !== "await" && m[1] !== "self") result[m[1]] = true;
+      }
+    }
+  });
+  return Object.keys(result);
+}
+
+/*
+ * isUpstreamDepRelevant(nd, changeId)
+ * Returns true when the changed function's edit makes its call to nd potentially
+ * incompatible — i.e. it removed a required kwarg, added an unknown kwarg, or
+ * removed the call entirely.
+ *
+ * Reuses parseSignatureDetailed (already used for downstream sig analysis) to check
+ * whether the dep still requires params that were dropped from the call site.
+ * If nd was also changed, its edited signature is used (same as downstream logic).
+ */
+function isUpstreamDepRelevant(nd, changeId) {
+  var ch = changes[changeId];
+  if (!ch || !ch.original || !ch.edited) return false;
+  var shortName = pn(nd.name).f;
+  if (!shortName) return false;
+
+  var origCallLines = findCallLines(ch.original, shortName);
+  var editCallLines = findCallLines(ch.edited,   shortName);
+
+  /* Call was added or completely removed — always relevant */
+  if (origCallLines.length > 0 && editCallLines.length === 0) return true;
+  if (origCallLines.length === 0 && editCallLines.length > 0) return true;
+  if (origCallLines.length === 0) return false;  /* not called at all */
+
+  /* Get dep's current signature — use edited version if dep was also changed */
+  var depSrc = null;
+  if (changes[nd.id]) {
+    depSrc = changes[nd.id].edited;
+  } else if (nodeCache[nd.id]) {
+    depSrc = nodeCache[nd.id].node.source;
+  } else if (nd.source) {
+    depSrc = nd.source;
+  }
+
+  /* Extract keyword args passed in original vs edited call */
+  var origKw = getKwArgsNearCall(ch.original, shortName);
+  var editKw = getKwArgsNearCall(ch.edited,   shortName);
+
+  /* Args removed from the call */
+  var removedFromCall = origKw.filter(function(a) { return editKw.indexOf(a) < 0; });
+  /* Args added to the call */
+  var addedToCall     = editKw.filter(function(a) { return origKw.indexOf(a) < 0; });
+
+  if (!removedFromCall.length && !addedToCall.length) return false;  /* call args unchanged */
+
+  if (!depSrc) return true;  /* args changed but can't verify — show it */
+
+  var depSig = parseSignatureDetailed(depSrc);
+  if (!depSig) return true;
+
+  var depParamNames = depSig.map(function(p) { return p.name; });
+
+  /* Removed a required (no-default) param from the call → incompatible */
+  for (var i = 0; i < removedFromCall.length; i++) {
+    var arg = removedFromCall[i];
+    for (var j = 0; j < depSig.length; j++) {
+      if (depSig[j].name === arg && !depSig[j].hasDefault) return true;
+    }
+  }
+
+  /* Added a kwarg that the dep doesn't accept → incompatible */
+  for (var i = 0; i < addedToCall.length; i++) {
+    if (depParamNames.indexOf(addedToCall[i]) < 0) return true;
+  }
+
+  return false;
+}
+
+/*
+ * computeUpstreamCallIssue(nd, changeId)
+ * Returns an issue object for one upstream dep, or null if the call is compatible.
+ */
+function computeUpstreamCallIssue(nd, changeId) {
+  var ch = changes[changeId];
+  if (!ch) return null;
+  var shortName = pn(nd.name).f;
+  var origKw = getKwArgsNearCall(ch.original, shortName);
+  var editKw = getKwArgsNearCall(ch.edited,   shortName);
+  var removedFromCall = origKw.filter(function(a) { return editKw.indexOf(a) < 0; });
+  var addedToCall     = editKw.filter(function(a) { return origKw.indexOf(a) < 0; });
+  if (!removedFromCall.length && !addedToCall.length) return null;
+
+  var depSrc = (changes[nd.id] ? changes[nd.id].edited : null)
+            || (nodeCache[nd.id] ? nodeCache[nd.id].node.source : null)
+            || nd.source || null;
+  var depSig = depSrc ? parseSignatureDetailed(depSrc) : null;
+  var depParams = depSig ? depSig.map(function(p) { return p.name; }) : [];
+
+  var removedRequired = removedFromCall.filter(function(a) {
+    return depSig && depSig.some(function(p) { return p.name === a && !p.hasDefault; });
+  });
+  var addedUnknown = addedToCall.filter(function(a) { return depParams.indexOf(a) < 0; });
+
+  if (!removedRequired.length && !addedUnknown.length) return null;
+  return { depId: nd.id, shortName: shortName, removedRequired: removedRequired, addedUnknown: addedUnknown };
+}
+
+/*
+ * collectUpstreamDeps()
+ * Collects relevant callees + computes call-site issues for each changed function.
+ */
+function collectUpstreamDeps() {
+  upstreamDeps       = {};
+  upstreamCallIssues = {};
+  changeIds.forEach(function(id) {
+    var d = nodeCache[id];
+    if (!d) return;
+    var issuesForChange = [];
+    d.upstream.forEach(function(nd) {
+      if (!changes[nd.id] && isUpstreamDepRelevant(nd, id)) {
+        upstreamDeps[nd.id] = nd;
+        var iss = computeUpstreamCallIssue(nd, id);
+        if (iss) issuesForChange.push(iss);
+      }
+    });
+    if (issuesForChange.length) upstreamCallIssues[id] = issuesForChange;
+  });
+}
+
+/* ── State ── */
+var changes, changeIds, highlightedId = null, selectedChangeId = null;
+
+/*
+ * getGraphView()
+ * Returns { changeIds, impact, edges, upDeps } scoped to selectedChangeId when one is
+ * active, or the full global sets when nothing is selected.
+ */
+function getGraphView() {
+  if (!selectedChangeId || !changes[selectedChangeId]) {
+    return { changeIds: changeIds, impact: transitiveImpact, edges: transitiveEdges, upDeps: upstreamDeps };
+  }
+  /* BFS from selectedChangeId through transitiveEdges to find reachable affected nodes */
+  var reachable = {};
+  reachable[selectedChangeId] = true;
+  var q = [selectedChangeId];
+  while (q.length) {
+    var cur = q.shift();
+    transitiveEdges.forEach(function(e) {
+      if (e.from === cur && !reachable[e.to]) { reachable[e.to] = true; q.push(e.to); }
+    });
+  }
+  var filtImpact = {};
+  Object.keys(transitiveImpact).forEach(function(id) {
+    if (reachable[id]) filtImpact[id] = transitiveImpact[id];
+  });
+  var filtEdges = transitiveEdges.filter(function(e) {
+    return reachable[e.from] && reachable[e.to];
+  });
+  var filtUpDeps = {};
+  var d = nodeCache[selectedChangeId];
+  if (d) d.upstream.forEach(function(nd) {
+    if (!changes[nd.id] && isUpstreamDepRelevant(nd, selectedChangeId)) filtUpDeps[nd.id] = nd;
+  });
+  return { changeIds: [selectedChangeId], impact: filtImpact, edges: filtEdges, upDeps: filtUpDeps };
+}
+
+/* ── Boot ── */
+changes   = loadAllChanges();
+changeIds = Object.keys(changes);
+
+if (changeIds.length === 0) {
+  document.getElementById("ch-loading").style.display = "none";
+  document.getElementById("ch-empty-page").style.display = "";
+} else {
+  Promise.all(changeIds.map(fetchNode))
+    .then(function() { return buildTransitiveImpact(); })
+    .then(function() {
+      collectUpstreamDeps();
+      computeTypeImpact();
+      document.getElementById("ch-loading").style.display = "none";
+      document.getElementById("changes-page").style.display = "";
+      _renderAll();
+    });
+}
+
+/* ── Render orchestrator (internal sync, called after async setup) ── */
+function _renderAll() {
+  renderStats();
+  renderList();
+  renderGraph();
+  renderImpact();
+}
+
+/* ── Public renderAll: reloads changes + rebuilds transitive impact ── */
+function renderAll() {
+  changes   = loadAllChanges();
+  changeIds = Object.keys(changes);
+  if (selectedChangeId && !changes[selectedChangeId]) selectedChangeId = null;
+  buildTransitiveImpact().then(function() {
+    collectUpstreamDeps();
+    computeTypeImpact();
+    _renderAll();
+  });
+}
+
+/* ── Stats bar ── */
+function renderStats() {
+  var staged   = changeIds.filter(function(id) { return  changes[id].staged; }).length;
+  var unstaged = changeIds.length - staged;
+
+  /* How many callers are definitely broken (call a deleted function) */
+  var brokenCallers = Object.keys(transitiveImpact).filter(function(id) {
+    return transitiveImpact[id].broken;
+  }).length;
+
+  /* How many changed functions have signature changes */
+  var breakingCount = changeIds.filter(function(id) {
+    return analyzeChange(id).severity === "breaking";
+  }).length;
+
+  var affectedTotal = Object.keys(transitiveImpact).length - brokenCallers;
+
+  var html =
+    '<div class="ch-stat"><span class="dot staged"></span>' + staged + ' staged</div>' +
+    '<div class="ch-stat"><span class="dot unstaged"></span>' + unstaged + ' unstaged</div>';
+
+  if (brokenCallers > 0) {
+    html += '<div class="ch-stat"><span class="dot broken"></span><strong style="color:var(--red);">' + brokenCallers + ' will break</strong></div>';
+  }
+  if (breakingCount > 0) {
+    html += '<div class="ch-stat"><span class="dot breaking"></span>' + breakingCount + ' signature change</div>';
+  }
+  var upstreamIncompat = Object.keys(upstreamCallIssues).length;
+  if (upstreamIncompat > 0) {
+    html += '<div class="ch-stat"><span class="dot" style="background:#ef4444;"></span><strong style="color:#f87171;">' + upstreamIncompat + ' upstream incompat</strong></div>';
+  }
+  /* Count type-changed functions that have all callers consistently updated */
+  var typeConsistentFns = Object.keys(fullTypeImpact).filter(function(id) {
+    var r = fullTypeImpact[id];
+    return r.typeChanges.length > 0 &&
+      !Object.keys(r.callers).some(function(cid) {
+        var v = r.callers[cid].verdict;
+        return v === 'missed' || v === 'inconsistent';
+      }) &&
+      Object.keys(r.callers).some(function(cid) {
+        return r.callers[cid].verdict === 'consistent';
+      });
+  }).length;
+  var typeMismatchCount = Object.keys(callerTypeIssues).length;
+  if (typeConsistentFns > 0 && !typeMismatchCount) {
+    html += '<div class="ch-stat"><span class="dot" style="background:var(--green);"></span>' + typeConsistentFns + ' type change consistent \u2713</div>';
+  } else if (typeMismatchCount > 0) {
+    html += '<div class="ch-stat"><span class="dot" style="background:#eab308;"></span>' + typeMismatchCount + ' type mismatch</div>';
+  }
+  if (affectedTotal > 0) {
+    var maxHop = 0;
+    Object.keys(transitiveImpact).forEach(function(id) {
+      if (!transitiveImpact[id].broken && transitiveImpact[id].hop > maxHop) maxHop = transitiveImpact[id].hop;
+    });
+    html += '<div class="ch-stat"><span class="dot affected"></span>' + affectedTotal + ' may be affected</div>';
+  }
+
+  document.getElementById("ch-stats").innerHTML = html;
+}
+
+/* ── Change list (left panel) ── */
+function renderList() {
+  var staged   = changeIds.filter(function(id) { return  changes[id].staged; });
+  var unstaged = changeIds.filter(function(id) { return !changes[id].staged; });
+  var html = "";
+
+  html += '<div class="ch-section">Staged (' + staged.length + ')</div>';
+  if (!staged.length) html += '<div style="padding:16px 20px;font-size:11px;color:var(--text-dim);font-family:\'JetBrains Mono\',monospace;">No staged changes</div>';
+  staged.forEach(function(id)   { html += renderCard(id, changes[id]); });
+
+  html += '<div class="ch-section">Unstaged (' + unstaged.length + ')</div>';
+  unstaged.forEach(function(id) { html += renderCard(id, changes[id]); });
+
+  var list = document.getElementById("ch-list");
+  list.innerHTML = html;
+
+  list.querySelectorAll(".ch-card-head").forEach(function(head) {
+    head.addEventListener("click", function(e) {
+      if (e.target.closest(".ch-btn")) return;
+      var card = head.closest(".ch-card");
+      var diff = card.querySelector(".ch-diff");
+      if (diff) diff.classList.toggle("open");
+      var id = card.dataset.id;
+      selectedChangeId = (selectedChangeId === id) ? null : id;
+      highlightNode(id);
+      renderGraph();
+    });
+  });
+}
+
+function renderCard(id, change) {
+  var ni   = pn(change.name);
+  var sev  = analyzeChange(id);
+
+  /* Diff */
+  var ops = lineDiff(change.original, change.edited);
+  var diffHtml = "";
+  ops.forEach(function(op) {
+    if (op.type === "sep") {
+      diffHtml += '<div class="ch-diff-line diff-sep">  ...</div>';
+    } else {
+      var pfx = op.type === "add" ? "+" : op.type === "del" ? "-" : " ";
+      diffHtml += '<div class="ch-diff-line diff-' + op.type + '">' + pfx + " " + escHtml(op.text) + "</div>";
+    }
+  });
+
+  /* Direct blast radius (hop-1 only for card badge) */
+  var blast = Object.keys(transitiveImpact).filter(function(aid) {
+    return transitiveImpact[aid].hop === 1 && transitiveImpact[aid].causedBy.indexOf(id) >= 0;
+  }).length;
+  var blastTag = blast > 0
+    ? '<span class="ch-blast">\u26A1' + blast + '</span>'
+    : '';
+
+  /* Severity tag */
+  var sevTag = '<span class="sev-tag ' + sev.severity + '">' + sev.label + '</span>';
+
+  /* Severity detail line (only for breaking/deleted) */
+  var detailHtml = (sev.severity !== "modified" && sev.detail)
+    ? '<div class="sev-detail ' + sev.severity + '">' + esc(sev.detail) + '</div>'
+    : '';
+
+  /* Type change lines (Levels 1+2) + combined verdict summary (Level 3) */
+  var tcInfo   = changedTypeInfo[id];
+  var typeHtml = "";
+  if (tcInfo && tcInfo.typeChanges.length) {
+    typeHtml = '<div class="ch-type-changes">';
+    tcInfo.typeChanges.forEach(function(tc) {
+      var lvlLabel = tc.level === "S" ? "SIG" : "L" + tc.level;
+      typeHtml += '<div class="ch-type-item">' +
+        '<span class="ti-label">' + lvlLabel + '</span>' +
+        esc(tc.detail) +
+      '</div>';
+    });
+
+    /* Verdict summary from combined cross-reference */
+    var s = tcInfo.summary;
+    var parts = [];
+    if (s.consistent  > 0) parts.push('<span style="color:var(--green);">\u2713 ' + s.consistent + ' caller' + (s.consistent > 1 ? 's' : '') + ' updated</span>');
+    if (s.missed      > 0) parts.push('<span style="color:#f97316;">\u26A0 ' + s.missed + ' not updated</span>');
+    if (s.inconsistent> 0) parts.push('<span style="color:#ef4444;">\u2716 ' + s.inconsistent + ' updated wrong</span>');
+    if (s.unverified  > 0 && !s.missed && !s.inconsistent)
+      parts.push('<span style="color:var(--text-dim);">? ' + s.unverified + ' unverified</span>');
+
+    if (parts.length) {
+      typeHtml += '<div class="ch-type-item" style="font-size:10px;gap:10px;margin-top:2px;">' +
+        parts.join('<span style="color:var(--border);margin:0 2px;">·</span>') +
+      '</div>';
+    }
+    typeHtml += '</div>';
+  }
+
+  /* Upstream call incompatibility lines */
+  var upIssues  = upstreamCallIssues[id];
+  var upHtml = "";
+  if (upIssues && upIssues.length) {
+    upHtml = '<div class="ch-type-changes">';
+    upIssues.forEach(function(iss) {
+      iss.removedRequired.forEach(function(param) {
+        upHtml += '<div class="ch-type-item">' +
+          '<span class="ti-label" style="background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.35);color:#f87171;">UP</span>' +
+          esc('removed required param \u201c' + param + '\u201d from call to ' + iss.shortName) +
+        '</div>';
+      });
+      iss.addedUnknown.forEach(function(param) {
+        upHtml += '<div class="ch-type-item">' +
+          '<span class="ti-label" style="background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.35);color:#f87171;">UP</span>' +
+          esc('added unknown param \u201c' + param + '\u201d to call to ' + iss.shortName) +
+        '</div>';
+      });
+    });
+    var incompatNames = upIssues.map(function(i) { return i.shortName; }).join(', ');
+    upHtml += '<div class="ch-type-item" style="font-size:10px;margin-top:2px;">' +
+      '<span style="color:#ef4444;">\u26A0 upstream call incompatible: ' + esc(incompatNames) + '</span>' +
+    '</div>';
+    upHtml += '</div>';
+  }
+
+  /* Buttons */
+  var isStaged = !!change.staged;
+  var stageBtn = isStaged
+    ? '<button class="ch-btn unstage" title="Unstage" onclick="doStage(\'' + escAttr(id) + '\',false);event.stopPropagation();">&minus;</button>'
+    : '<button class="ch-btn stage"   title="Stage"   onclick="doStage(\'' + escAttr(id) + '\',true);event.stopPropagation();">+</button>';
+  var discardBtn = '<button class="ch-btn discard" title="Discard" onclick="doDiscard(\'' + escAttr(id) + '\');event.stopPropagation();">&times;</button>';
+
+  return '<div class="ch-card' + (highlightedId === id ? ' highlight' : '') + '" data-id="' + escAttr(id) + '">' +
+    '<div class="ch-card-head">' +
+      '<span class="ch-card-name">' + esc(ni.f) + sevTag + blastTag + '</span>' +
+      '<div class="ch-card-actions">' + stageBtn + discardBtn + '</div>' +
+    '</div>' +
+    '<div class="ch-card-file">' + esc(change.file) + ':' + change.lineno + '</div>' +
+    detailHtml +
+    typeHtml +
+    upHtml +
+    '<div class="ch-diff">' + diffHtml + '</div>' +
+  '</div>';
+}
+
+/* ── Stage / discard ── */
+function doStage(id, stage) {
+  changes[id].staged = stage;
+  saveAllChanges(changes);
+  renderAll();
+}
+function doDiscard(id) {
+  delete changes[id];
+  saveAllChanges(changes);
+  changes   = loadAllChanges();
+  changeIds = Object.keys(changes);
+  if (!changeIds.length) {
+    document.getElementById("changes-page").style.display = "none";
+    document.getElementById("ch-empty-page").style.display = "";
+    return;
+  }
+  renderAll();
+}
+
+/* ── Highlight sync ── */
+function highlightNode(id) {
+  highlightedId = (highlightedId === id) ? null : id;
+  document.querySelectorAll(".ch-gnode").forEach(function(el) {
+    el.classList.toggle("highlight", el.dataset.id === highlightedId);
+  });
+  document.querySelectorAll(".ch-card").forEach(function(el) {
+    el.classList.toggle("highlight", el.dataset.id === highlightedId);
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   IMPACT GRAPH (right panel)
+   ═══════════════════════════════════════════════════════════════ */
+function renderGraph() {
+  closeNodePanel();
+  var plane = document.getElementById("ch-graph-plane");
+  plane.innerHTML = '<svg class="ch-graph-svg" id="ch-graph-svg"></svg>';
+
+  /* Scope to the selected change, or show everything if none selected.
+   * MUST be before the early-return check — var declarations are hoisted,
+   * so declaring changeIds here would make it undefined at the check otherwise. */
+  var gv = getGraphView();
+  var changeIds        = gv.changeIds;
+  var transitiveImpact = gv.impact;
+  var transitiveEdges  = gv.edges;
+  var upstreamDeps     = gv.upDeps;
+
+  /* Update header filter badge */
+  var badge = document.getElementById("graph-filter-badge");
+  if (badge) {
+    badge.style.display = selectedChangeId ? "" : "none";
+    badge.onclick = function() { selectedChangeId = null; highlightNode(null); renderGraph(); };
+  }
+
+  if (!changeIds.length) {
+    plane.innerHTML += '<div class="ch-graph-empty">No changes to visualise.</div>';
+    return;
+  }
+
+  var changedSet = {};
+  changeIds.forEach(function(id) { changedSet[id] = true; });
+
+  var upstreamDepIds = Object.keys(upstreamDeps).filter(function(id) {
+    return !changedSet[id] && !transitiveImpact[id];
+  });
+  var allNodeIds = upstreamDepIds.concat(changeIds).concat(Object.keys(transitiveImpact));
+
+  /* Build full edge list for topo sort */
+  var allEdges = [];
+
+  /* upstream dep → changed: dep is a callee of the changed function, so it sits LEFT */
+  upstreamDepIds.forEach(function(depId) {
+    changeIds.forEach(function(id) {
+      var d = nodeCache[id];
+      if (!d) return;
+      if (d.upstream.some(function(nd) { return nd.id === depId; })) {
+        allEdges.push({ from: depId, to: id });
+      }
+    });
+  });
+
+  /* changed → changed: edge from callee (upstream/dependency) to caller (downstream).
+   * upstream_ids stores caller IDs, so uid calls id → id is the upstream dependency.
+   * We want dependency (id) on the LEFT, caller (uid) on the RIGHT. */
+  changeIds.forEach(function(id) {
+    var d = nodeCache[id];
+    if (!d) return;
+    (d.node.upstream_ids || []).forEach(function(uid) {
+      if (changedSet[uid]) allEdges.push({ from: id, to: uid });
+    });
+  });
+
+  /* transitive edges (changed→affected, affected→affected) */
+  transitiveEdges.forEach(function(e) {
+    allEdges.push({ from: e.from, to: e.to });
+  });
+
+  /* Topological layering */
+  var inDeg = {};
+  allNodeIds.forEach(function(id) { inDeg[id] = 0; });
+  allEdges.forEach(function(e) { if (inDeg[e.to] !== undefined) inDeg[e.to]++; });
+
+  var layers = [], assigned = {};
+  var remaining = allNodeIds.slice();
+
+  while (remaining.length) {
+    var layer = remaining.filter(function(id) { return inDeg[id] === 0; });
+    if (!layer.length) layer = [remaining[0]];
+    layers.push(layer);
+    layer.forEach(function(id) {
+      assigned[id] = layers.length - 1;
+      allEdges.forEach(function(e) {
+        if (e.from === id && inDeg[e.to] !== undefined) inDeg[e.to]--;
+      });
+    });
+    remaining = remaining.filter(function(id) { return assigned[id] === undefined; });
+  }
+
+  /* Render columns */
+  layers.forEach(function(layer, li) {
+    var col = document.createElement("div");
+    col.className = "ch-graph-col";
+
+    /* Column label */
+    var hasChanged     = layer.some(function(id) { return changedSet[id]; });
+    var hasAffected    = layer.some(function(id) { return !!transitiveImpact[id]; });
+    var hasUpstreamDep = layer.some(function(id) { return !!upstreamDeps[id]; });
+    var labelText;
+    if (hasUpstreamDep && !hasChanged && !hasAffected) {
+      labelText = "Upstream dep";
+    } else if (hasChanged && !hasAffected) {
+      labelText = li === 0 ? "Changed" : "Changed (dep)";
+    } else if (hasAffected && !hasChanged) {
+      var minHop = layer.reduce(function(m, id) {
+        return transitiveImpact[id] ? Math.min(m, transitiveImpact[id].hop) : m;
+      }, Infinity);
+      labelText = "Affected — hop " + minHop;
+    } else {
+      labelText = "Mixed";
+    }
+    var lbl = document.createElement("div");
+    lbl.className = "ch-graph-col-label";
+    lbl.textContent = labelText;
+    col.appendChild(lbl);
+
+    /* Nodes */
+    layer.forEach(function(id) {
+      var isChanged = !!changedSet[id];
+      var impInfo   = transitiveImpact[id];
+
+      var node = document.createElement("div");
+      var cls  = "ch-gnode";
+
+      if (upstreamDeps[id] && !isChanged) {
+        cls += " upstream-dep";
+      } else if (isChanged) {
+        var sev = analyzeChange(id).severity;
+        if      (sev === "deleted")  cls += " deleted";
+        else if (sev === "breaking") cls += " breaking";
+        else if (!changes[id] || !changes[id].staged) cls += " unstaged";
+        /* staged + modified → default green border */
+      } else if (impInfo) {
+        if (impInfo.broken) {
+          /* Calls a deleted function — will fail at runtime */
+          cls += " broken";
+        } else if (impInfo.hop === 1) {
+          cls += " affected";
+        } else if (impInfo.hop === 2) {
+          cls += " affected-h2";
+        } else {
+          cls += " affected-h3p";
+        }
+      }
+
+      if (highlightedId === id) cls += " highlight";
+      node.className = cls;
+      node.dataset.id = id;
+
+      var ni, fileStr;
+      if (isChanged) {
+        ni = pn(changes[id].name);
+        fileStr = changes[id].file;
+      } else if (impInfo) {
+        ni = pn(impInfo.node.name);
+        fileStr = impInfo.node.file;
+      } else {
+        ni = pn(upstreamDeps[id].name);
+        fileStr = upstreamDeps[id].file;
+      }
+
+      node.innerHTML =
+        '<div class="gn-name">' + esc(ni.f) + '</div>' +
+        '<div class="gn-file">' + esc(fileStr) + '</div>';
+
+      /* Badge: ⚡N for changed nodes, "hop N" for affected */
+      if (isChanged) {
+        var directBlast = Object.keys(transitiveImpact).filter(function(aid) {
+          return transitiveImpact[aid].hop === 1 && transitiveImpact[aid].causedBy.indexOf(id) >= 0;
+        }).length;
+        if (directBlast > 0) {
+          var badge = document.createElement("span");
+          badge.className = "gn-badge";
+          badge.textContent = "\u26A1" + directBlast;
+          badge.title = directBlast + " direct caller(s) affected";
+          node.appendChild(badge);
+        }
+      } else if (impInfo) {
+        var hopBadge = document.createElement("span");
+        hopBadge.className = "ch-hop";
+        hopBadge.textContent = "hop " + impInfo.hop;
+        node.appendChild(hopBadge);
+      }
+
+      /* TYPE/SIG badge for callers with detected call-site issues */
+      if (!isChanged && callerTypeIssues[id]) {
+        var typeB     = document.createElement("span");
+        typeB.className = "gn-type-badge";
+        var hasTypeIss = callerTypeIssues[id].some(function(i) { return !i.kind; });
+        var hasSigIss  = callerTypeIssues[id].some(function(i) { return  i.kind; });
+        typeB.textContent = hasTypeIss && hasSigIss ? "TYPE/SIG" : hasSigIss ? "SIG" : "TYPE";
+        typeB.title = callerTypeIssues[id].map(function(i) {
+          return i.detail || ('"' + i.param + '" expects ' + i.expected + ', got ' + i.got);
+        }).join("\n");
+        node.appendChild(typeB);
+      }
+
+      node.onclick = (function(nodeId) {
+        return function() {
+          highlightNode(nodeId);
+          openNodePanel(nodeId);
+          /* Also sync the left-panel card for changed nodes */
+          var card = document.querySelector('.ch-card[data-id="' + nodeId + '"]');
+          if (card) card.scrollIntoView({behavior: "smooth", block: "center"});
+        };
+      })(id);
+
+      col.appendChild(node);
+    });
+
+    plane.appendChild(col);
+  });
+
+  requestAnimationFrame(function() { requestAnimationFrame(drawGraphLines); });
+}
+
+/* ── SVG lines ── */
+function drawGraphLines() {
+  var gv = getGraphView();
+  var changeIds       = gv.changeIds;
+  var transitiveEdges  = gv.edges;
+  var upstreamDeps     = gv.upDeps;
+
+  var svg   = document.getElementById("ch-graph-svg");
+  var plane = document.getElementById("ch-graph-plane");
+  if (!svg || !plane) return;
+
+  var pr = plane.getBoundingClientRect();
+  svg.setAttribute("width",  plane.scrollWidth);
+  svg.setAttribute("height", plane.scrollHeight);
+  svg.innerHTML = "";
+
+  var changedSet = {};
+  changeIds.forEach(function(id) { changedSet[id] = true; });
+
+  /* upstream dep → changed: faded cyan edges */
+  var upstreamDepIdSet = {};
+  Object.keys(upstreamDeps).forEach(function(id) { upstreamDepIdSet[id] = true; });
+  Object.keys(upstreamDeps).forEach(function(depId) {
+    changeIds.forEach(function(id) {
+      var d = nodeCache[id];
+      if (!d) return;
+      if (d.upstream.some(function(nd) { return nd.id === depId; })) {
+        drawEdge(svg, pr, depId, id, "upstream");
+      }
+    });
+  });
+
+  /* changed → changed: draw from callee (dependency) to caller (consumer).
+   * upstream_ids = callers, so uid calls id. Arrow: id (upstream) → uid (downstream). */
+  changeIds.forEach(function(id) {
+    var d = nodeCache[id];
+    if (!d) return;
+    (d.node.upstream_ids || []).forEach(function(uid) {
+      if (changedSet[uid]) drawEdge(svg, pr, id, uid, "change");
+    });
+  });
+
+  /* transitive edges — broken edges (to/from deleted callers) drawn in solid red */
+  transitiveEdges.forEach(function(e) {
+    var edgeClass = e.broken ? "broken" : e.hop <= 1 ? "impact" : "deep";
+    drawEdge(svg, pr, e.from, e.to, edgeClass);
+  });
+}
+
+function drawEdge(svg, pr, fromId, toId, type) {
+  var fe = document.querySelector('.ch-gnode[data-id="' + fromId + '"]');
+  var te = document.querySelector('.ch-gnode[data-id="' + toId   + '"]');
+  if (!fe || !te) return;
+
+  var fr = fe.getBoundingClientRect(), tr = te.getBoundingClientRect();
+  var x1 = fr.right - pr.left,  y1 = fr.top - pr.top + fr.height / 2;
+  var x2 = tr.left  - pr.left,  y2 = tr.top - pr.top + tr.height / 2;
+
+  if (x2 <= x1) {
+    x1 = fr.left - pr.left + fr.width / 2;
+    x2 = tr.left - pr.left + tr.width / 2;
+    y1 = fr.bottom - pr.top;
+    y2 = tr.top    - pr.top;
+  }
+
+  var cp = Math.max(30, Math.abs(x2 - x1) * 0.4);
+  var d;
+  if (Math.abs(y2 - y1) > Math.abs(x2 - x1)) {
+    d = "M" + x1 + "," + y1 + " C" + x1 + "," + (y1+cp) + " " + x2 + "," + (y2-cp) + " " + x2 + "," + y2;
+  } else {
+    d = "M" + x1 + "," + y1 + " C" + (x1+cp) + "," + y1 + " " + (x2-cp) + "," + y2 + " " + x2 + "," + y2;
+  }
+
+  var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", d);
+  path.setAttribute("class", "edge-" + type);
+  svg.appendChild(path);
+
+  var dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  dot.setAttribute("cx", x2);
+  dot.setAttribute("cy", y2);
+  dot.setAttribute("r", 3);
+  dot.setAttribute("class", "dot-" + (type === "change" ? "change" : type === "upstream" ? "upstream" : type === "impact" ? "impact" : "deep"));
+  svg.appendChild(dot);
+}
+
+/* ── Impact footer ── */
+function renderImpact() {
+  var changedSet = {};
+  changeIds.forEach(function(id) { changedSet[id] = true; });
+
+  var el = document.getElementById("ch-impact");
+  var affectedIds = Object.keys(transitiveImpact);
+
+  if (!affectedIds.length && !Object.keys(callerTypeIssues).length) {
+    el.style.display = "none"; return;
+  }
+
+  /* Group by hop */
+  var byHop = {};
+  affectedIds.forEach(function(aid) {
+    var h = transitiveImpact[aid].hop;
+    if (!byHop[h]) byHop[h] = [];
+    byHop[h].push(aid);
+  });
+
+  var totalFiles = {};
+  affectedIds.forEach(function(aid) {
+    totalFiles[transitiveImpact[aid].node.file] = true;
+  });
+
+  el.style.display = "";
+
+  var brokenList   = affectedIds.filter(function(id) { return  transitiveImpact[id].broken; });
+  var maybeList    = affectedIds.filter(function(id) { return !transitiveImpact[id].broken; });
+
+  var html = "";
+
+  /* ── WILL BREAK section (highest priority) ── */
+  if (brokenList.length) {
+    html += '<div class="ch-impact-title" style="color:#ef4444;">' +
+      '\u2716 ' + brokenList.length + ' function(s) WILL BREAK — they still call a deleted function</div>';
+    brokenList.sort(function(a,b) { return transitiveImpact[a].hop - transitiveImpact[b].hop; })
+    .forEach(function(aid) {
+      var imp   = transitiveImpact[aid];
+      var afn   = pn(imp.node.name).f;
+      var cause = imp.causedBy[0];
+      var cfn   = cause && changes[cause] ? pn(changes[cause].name).f
+                : cause && nodeCache[cause] ? pn(nodeCache[cause].node.name).f
+                : cause;
+      html += '<div class="ch-impact-item">' +
+        '<span style="color:#ef4444;font-weight:600;">' + esc(afn) + '</span>' +
+        '<span class="imp-arrow">\u2190 calls</span>' +
+        '<span style="color:var(--text-dim);">' + esc(cfn || "?") + '</span>' +
+        '<span class="imp-hop" style="border-color:rgba(239,68,68,0.4);color:#ef4444;">hop ' + imp.hop + '</span>' +
+        '<span style="font-size:9px;color:var(--text-dim);">' + esc(imp.node.file + ":" + imp.node.lineno) + '</span>' +
+      '</div>';
+    });
+  }
+
+  /* ── TYPE ANALYSIS section (combined L1+L2+L3 verdicts) ── */
+  /* Collect every changed function that has type changes */
+  var typeChangedFns = Object.keys(fullTypeImpact).filter(function(id) {
+    return fullTypeImpact[id].typeChanges.length > 0;
+  });
+
+  if (typeChangedFns.length) {
+    var topM = brokenList.length ? '10px' : '0';
+
+    typeChangedFns.forEach(function(changedId) {
+      var r    = fullTypeImpact[changedId];
+      var cfn  = pn(changes[changedId] ? changes[changedId].name : "").f;
+
+      /* Group callers by verdict */
+      var byVerdict = { consistent: [], inconsistent: [], missed: [], unverified: [] };
+      Object.keys(r.callers).forEach(function(cid) {
+        byVerdict[r.callers[cid].verdict].push(cid);
+      });
+
+      var hasProblem = byVerdict.missed.length || byVerdict.inconsistent.length;
+      var allGood    = !hasProblem && byVerdict.consistent.length > 0;
+
+      /* Section header — label reflects whether it's a type change, sig change, or both */
+      var hasSigTc  = r.typeChanges.some(function(tc) { return tc.level === "S"; });
+      var hasTypeTc = r.typeChanges.some(function(tc) { return tc.level !== "S"; });
+      var changeKind = hasSigTc && hasTypeTc ? 'type/sig change'
+                     : hasSigTc ? 'signature change' : 'type change';
+      var headerColor = hasProblem ? '#eab308' : allGood ? 'var(--green)' : 'var(--text-dim)';
+      html += '<div class="ch-impact-section" style="color:' + headerColor + ';margin-top:' + topM + ';">' +
+        (hasProblem ? '\u26A0' : allGood ? '\u2713' : '?') + ' ' + changeKind + ' in ' + esc(cfn) + '</div>';
+      topM = '6px';
+
+      r.typeChanges.forEach(function(tc) {
+        var lvlLabel = tc.level === "S" ? "SIG" : "L" + tc.level;
+        html += '<div class="ch-impact-item" style="font-size:9px;color:var(--text-dim);padding-left:8px;">' +
+          '<span class="ti-label" style="font-size:8px;">' + lvlLabel + '</span>' + esc(tc.detail) +
+        '</div>';
+      });
+
+      /* ✓ Consistent callers — updated correctly, no action needed */
+      if (byVerdict.consistent.length) {
+        html += '<div class="ch-impact-item" style="color:var(--green);padding-left:8px;">' +
+          '\u2713 ' + byVerdict.consistent.length + ' caller(s) already updated — change is self-consistent' +
+        '</div>';
+      }
+
+      /* ✗ Inconsistent — updated but still has issues */
+      byVerdict.inconsistent.forEach(function(cid) {
+        var cr   = r.callers[cid];
+        var name = pn(cr.node.name).f;
+        html += '<div class="ch-impact-item" style="padding-left:8px;">' +
+          '<span style="color:#ef4444;font-weight:600;">' + esc(name) + '</span>' +
+          '<span class="imp-arrow">\u2014 updated but wrong:</span>';
+        cr.issues.forEach(function(iss) {
+          var text = iss.detail
+            ? esc(iss.detail)
+            : '"' + esc(iss.param) + '" got ' + esc(iss.got) + ', expects ' + esc(iss.expected) + ' (' + esc(iss.arg) + ')';
+          html += '<span style="color:#ef4444;font-size:9px;">' + text + '</span>';
+        });
+        html += '</div>';
+      });
+
+      /* ⚠ Missed — not in changes, issue detected */
+      byVerdict.missed.forEach(function(cid) {
+        var cr   = r.callers[cid];
+        var name = pn(cr.node.name).f;
+        html += '<div class="ch-impact-item" style="padding-left:8px;">' +
+          '<span style="color:#f97316;font-weight:600;">' + esc(name) + '</span>' +
+          '<span class="imp-arrow">\u2014 NOT updated:</span>';
+        cr.issues.forEach(function(iss) {
+          var text = iss.detail
+            ? esc(iss.detail)
+            : '"' + esc(iss.param) + '" still gets ' + esc(iss.got) + ', expects ' + esc(iss.expected) + ' (' + esc(iss.arg) + ')';
+          html += '<span style="color:#f97316;font-size:9px;">' + text + '</span>';
+        });
+        html += '</div>';
+      });
+
+      /* ? Unverified — not in changes, couldn't determine compatibility */
+      if (byVerdict.unverified.length && !byVerdict.missed.length) {
+        html += '<div class="ch-impact-item" style="color:var(--text-dim);font-size:9px;padding-left:8px;">' +
+          '? ' + byVerdict.unverified.length + ' caller(s) not updated — could not verify (no literal args to check)' +
+        '</div>';
+      }
+    });
+  }
+
+  /* ── MAY BE AFFECTED section ── */
+  if (maybeList.length) {
+    var topMargin = (brokenList.length || typeMismatchIds.length) ? '10px' : '0';
+    html += '<div class="ch-impact-section affected" style="margin-top:' + topMargin + ';">' +
+      '\u26A1 ' + maybeList.length + ' function(s) may be affected (behavior change)</div>';
+    maybeList.sort(function(a,b) { return transitiveImpact[a].hop - transitiveImpact[b].hop; })
+    .forEach(function(aid) {
+      var imp   = transitiveImpact[aid];
+      var afn   = pn(imp.node.name).f;
+      var cause = imp.causedBy[0];
+      var cfn   = cause && changes[cause] ? pn(changes[cause].name).f
+                : cause && nodeCache[cause] ? pn(nodeCache[cause].node.name).f
+                : cause;
+      html += '<div class="ch-impact-item">' +
+        '<span style="color:var(--text-dim);">' + esc(cfn || "?") + '</span>' +
+        '<span class="imp-arrow">\u2192</span>' +
+        '<span style="color:#f97316;opacity:0.9;">' + esc(afn) + '</span>' +
+        '<span class="imp-hop">hop ' + imp.hop + '</span>' +
+        '<span style="font-size:9px;color:var(--text-dim);">' + esc(imp.node.file + ":" + imp.node.lineno) + '</span>' +
+      '</div>';
+    });
+  }
+
+  el.innerHTML = html;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   NODE DETAIL PANEL
+   Click any graph node → slide-in panel showing the function source
+   with broken/problematic call lines highlighted red.
+   ═══════════════════════════════════════════════════════════════ */
+
+/*
+ * findCallLines(source, funcName)
+ * Returns 0-indexed line positions within `source` where `funcName` is called.
+ */
+function findCallLines(source, funcName) {
+  if (!source || !funcName) return [];
+  var lines   = source.split("\n");
+  var escaped = funcName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  var re      = new RegExp("(?:^|[^\\w])" + escaped + "\\s*\\(");
+  var hits    = [];
+  lines.forEach(function(line, i) {
+    if (re.test(line)) hits.push(i);
+  });
+  return hits;
+}
+
+/* ── Python syntax highlighter (VS Code Dark+) ── */
+var PY_KW = /^(def|class|return|yield|lambda|del|global|nonlocal|assert|pass|async|await|with|as)$/;
+var PY_CF = /^(if|elif|else|for|while|try|except|finally|raise|break|continue|and|or|not|in|is|import|from)$/;
+var PY_VAL = /^(True|False|None)$/;
+var PY_BI = /^(print|len|range|type|int|str|float|list|dict|set|tuple|bool|super|isinstance|issubclass|hasattr|getattr|setattr|delattr|enumerate|zip|map|filter|sorted|reversed|any|all|min|max|sum|abs|round|open|iter|next|id|repr|format|input|staticmethod|classmethod|property|object|Exception|ValueError|TypeError|KeyError|IndexError|AttributeError|RuntimeError|StopIteration|NotImplementedError|OSError|IOError)$/;
+var PY_TP = /^(Optional|List|Dict|Set|Tuple|Union|Any|Sequence|Mapping|Callable|Iterable|Iterator|Generator|Type|ClassVar|Final)$/;
+var PY_TOK = /("""[\s\S]*?"""|'''[\s\S]*?'''|f"""[\s\S]*?"""|f'''[\s\S]*?''')|([rbuf]?"(?:[^"\\\n]|\\.)*"|[rbuf]?'(?:[^'\\\n]|\\.)*')|(#[^\n]*)|((?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?j?)|(@\w[\w.]*)|\b(\w+)\b|([+\-*\/%=<>!&|^~:;,.()\[\]{}]+)|(\s+)/g;
+
+function highlightPython(src) {
+  var out = "", lastIdx = 0, afterDef = false, m;
+  PY_TOK.lastIndex = 0;
+  while ((m = PY_TOK.exec(src)) !== null) {
+    if (m.index > lastIdx) out += escHtml(src.slice(lastIdx, m.index));
+    lastIdx = m.index + m[0].length;
+    var triStr = m[1], str1 = m[2], comment = m[3], num = m[4], dec = m[5],
+        word = m[6], op = m[7], ws = m[8];
+    if      (triStr   !== undefined) { out += '<span class="hl-str">' + escHtml(triStr) + "</span>"; afterDef = false; }
+    else if (str1     !== undefined) { out += '<span class="hl-str">' + escHtml(str1) + "</span>"; afterDef = false; }
+    else if (comment  !== undefined) { out += '<span class="hl-cm">' + escHtml(comment) + "</span>"; }
+    else if (num      !== undefined) { out += '<span class="hl-num">' + escHtml(num) + "</span>"; afterDef = false; }
+    else if (dec      !== undefined) { out += '<span class="hl-dec">' + escHtml(dec) + "</span>"; afterDef = false; }
+    else if (word     !== undefined) {
+      if (afterDef) { out += '<span class="hl-fn">' + escHtml(word) + "</span>"; afterDef = false; }
+      else if (word === "self" || word === "cls") { out += '<span class="hl-sf">' + escHtml(word) + "</span>"; }
+      else if (PY_VAL.test(word)) { out += '<span class="hl-val">' + escHtml(word) + "</span>"; }
+      else if (PY_KW.test(word))  { out += '<span class="hl-kw">' + escHtml(word) + "</span>"; if (word === "def" || word === "class") afterDef = true; }
+      else if (PY_CF.test(word))  { out += '<span class="hl-cf">' + escHtml(word) + "</span>"; }
+      else if (PY_TP.test(word))  { out += '<span class="hl-tp">' + escHtml(word) + "</span>"; }
+      else if (PY_BI.test(word))  { out += '<span class="hl-bi">' + escHtml(word) + "</span>"; }
+      else { out += escHtml(word); }
+    } else if (op !== undefined) { out += '<span class="hl-op">' + escHtml(op) + "</span>"; afterDef = false; }
+    else if (ws !== undefined) { out += ws; }
+  }
+  if (lastIdx < src.length) out += escHtml(src.slice(lastIdx));
+  return out;
+}
+
+/*
+ * openNodePanel(id)
+ * Builds and opens the detail panel for graph node `id`.
+ * - Changed nodes: shows what was modified in this function (links to card)
+ * - Broken nodes: highlights lines that call the deleted function
+ * - Type/sig issue nodes: highlights lines with mismatched call sites
+ * - Other affected nodes: shows source with context
+ */
+function openNodePanel(id) {
+  var panel     = document.getElementById("nd-panel");
+  var nameEl    = document.getElementById("nd-fn-name");
+  var fileEl    = document.getElementById("nd-fn-file");
+  var issuesEl  = document.getElementById("nd-issues");
+  var sourceEl  = document.getElementById("nd-source");
+
+  var isChanged = !!changes[id];
+  var impInfo   = transitiveImpact[id];
+
+  /* ── Resolve node data ── */
+  var name, file, lineno, source;
+  if (isChanged) {
+    var ch = changes[id];
+    name   = ch.name;
+    file   = ch.file;
+    lineno = ch.lineno;
+    source = ch.edited;          /* show the edited version */
+  } else if (impInfo) {
+    name   = impInfo.node.name;
+    file   = impInfo.node.file;
+    lineno = impInfo.node.lineno;
+    var cd = nodeCache[id];
+    source = cd && cd.node.source ? cd.node.source : null;
+  } else if (upstreamDeps[id]) {
+    var dep = upstreamDeps[id];
+    name   = dep.name;
+    file   = dep.file;
+    lineno = dep.lineno;
+    /* Show the dep's OWN source — highlighted params tell the user what's violated */
+    source = (changes[id] ? changes[id].edited : null)
+          || (nodeCache[id] ? nodeCache[id].node.source : null)
+          || dep.source || null;
+  } else {
+    return;
+  }
+
+  nameEl.textContent = pn(name).f;
+  fileEl.textContent = file + (lineno ? ":" + lineno : "");
+
+  /* ── Build issues list ── */
+  var issues = [];   /* [{line0idx, label, warn}]  line0idx = 0-based within source */
+
+  if (isChanged) {
+    /* Changed node — point user to the diff in the left panel */
+    var sev = analyzeChange(id);
+    issuesEl.innerHTML =
+      '<div class="nd-issue-row warn">' +
+        '<span class="nd-issue-icon">\u270E</span>' +
+        'This function was ' + sev.label.toLowerCase() + '. ' +
+        (sev.severity !== "modified" ? esc(sev.detail) : "See diff in the left panel.") +
+      '</div>';
+    /* For changed functions, highlight the edited def line only */
+    var defLine = source ? source.split("\n").findIndex(function(l) {
+      return /^\s*(?:async\s+)?def\s/.test(l);
+    }) : -1;
+    if (defLine >= 0) issues.push({ idx: defLine, label: sev.label, warn: sev.severity !== "deleted" });
+
+  } else if (impInfo && impInfo.broken) {
+    /* BROKEN: find the lines that call the deleted function(s) */
+    var issHtml = "";
+    impInfo.causedBy.forEach(function(causeId) {
+      var causeName = changes[causeId] ? changes[causeId].name
+                    : nodeCache[causeId] ? nodeCache[causeId].node.name : null;
+      if (!causeName) return;
+      var shortName = pn(causeName).f;
+      issHtml += '<div class="nd-issue-row">' +
+        '<span class="nd-issue-icon">\u2716</span>' +
+        'calls deleted function <strong>' + esc(shortName) + '</strong> — will fail at runtime' +
+      '</div>';
+      if (source) {
+        findCallLines(source, shortName).forEach(function(idx) {
+          issues.push({ idx: idx, label: "BREAK", warn: false });
+        });
+      }
+    });
+    issuesEl.innerHTML = issHtml || '<div class="nd-no-issues">No issue detail available.</div>';
+
+  } else if (callerTypeIssues[id]) {
+    /* TYPE/SIG issue caller — highlight call lines with mismatches */
+    var cIssues = callerTypeIssues[id];
+    /* Find all the changed functions this node calls */
+    var calledChangedFns = [];
+    Object.keys(fullTypeImpact).forEach(function(changedId) {
+      var r = fullTypeImpact[changedId];
+      if (r.callers[id]) calledChangedFns.push({ changedId: changedId, callerData: r.callers[id] });
+    });
+
+    var issHtml = "";
+    cIssues.forEach(function(iss) {
+      issHtml += '<div class="nd-issue-row warn">' +
+        '<span class="nd-issue-icon">\u26A0</span>' +
+        esc(iss.detail || ('"' + iss.param + '" expects ' + iss.expected + ', got ' + iss.got)) +
+      '</div>';
+    });
+    issuesEl.innerHTML = issHtml;
+
+    /* Highlight call sites */
+    if (source) {
+      calledChangedFns.forEach(function(entry) {
+        var changedName = changes[entry.changedId] ? changes[entry.changedId].name : "";
+        findCallLines(source, pn(changedName).f).forEach(function(idx) {
+          issues.push({ idx: idx, label: "ISSUE", warn: true });
+        });
+      });
+    }
+
+  } else if (upstreamDeps[id]) {
+    /* Upstream dep — find which caller has issues and highlight violated params in THIS dep's source */
+    var callerCid3 = (selectedChangeId && changes[selectedChangeId]) ? selectedChangeId : null;
+    if (!callerCid3) {
+      changeIds.forEach(function(cid) {
+        if (!callerCid3 && upstreamCallIssues[cid] &&
+            upstreamCallIssues[cid].some(function(i) { return i.depId === id; })) callerCid3 = cid;
+      });
+    }
+    var iss3 = callerCid3 && upstreamCallIssues[callerCid3]
+      ? upstreamCallIssues[callerCid3].filter(function(i) { return i.depId === id; })[0]
+      : null;
+
+    var issHtml3 = "";
+    if (iss3) {
+      var callerName3 = changes[callerCid3] ? pn(changes[callerCid3].name).f : "caller";
+
+      iss3.removedRequired.forEach(function(param) {
+        issHtml3 += '<div class="nd-issue-row">' +
+          '<span class="nd-issue-icon">\u2716</span>' +
+          '<strong>' + esc(callerName3) + '</strong> removed required param <strong>' + esc(param) + '</strong> &mdash; call will fail' +
+        '</div>';
+        /* Highlight the line in THIS dep's source where this param is defined */
+        if (source) {
+          var depLines = source.split("\n");
+          depLines.forEach(function(line, i) {
+            var re = new RegExp("\\b" + param + "\\b");
+            if (re.test(line) && i < 20) issues.push({ idx: i, label: "MISSING", warn: false });
+          });
+        }
+      });
+
+      iss3.addedUnknown.forEach(function(param) {
+        issHtml3 += '<div class="nd-issue-row warn">' +
+          '<span class="nd-issue-icon">\u26A0</span>' +
+          '<strong>' + esc(callerName3) + '</strong> added unknown param <strong>' + esc(param) + '</strong> to call' +
+        '</div>';
+      });
+    }
+
+    issuesEl.innerHTML = issHtml3 || '<div class="nd-no-issues">\u2190 called by changed function &mdash; incompatible call site</div>';
+
+  } else {
+    /* Affected node — highlight lines calling the changed function(s) */
+    var issHtml = "";
+    if (impInfo && impInfo.causedBy && impInfo.causedBy.length) {
+      impInfo.causedBy.forEach(function(causeId) {
+        var causeName = changes[causeId] ? changes[causeId].name
+                      : nodeCache[causeId] ? nodeCache[causeId].node.name : null;
+        if (!causeName) return;
+        var shortName = pn(causeName).f;
+        issHtml += '<div class="nd-issue-row warn">' +
+          '<span class="nd-issue-icon">\u26A1</span>' +
+          'calls changed function <strong>' + esc(shortName) + '</strong> — may be affected' +
+        '</div>';
+        if (source) {
+          findCallLines(source, shortName).forEach(function(idx) {
+            issues.push({ idx: idx, label: "", warn: false });
+          });
+        }
+      });
+    }
+    issuesEl.innerHTML = issHtml || '<div class="nd-no-issues">' +
+      (impInfo ? 'May be affected — hop ' + impInfo.hop + '. Review call sites manually.' : 'No issue data.') +
+    '</div>';
+  }
+
+  /* ── Render source ── */
+  if (!source) {
+    sourceEl.innerHTML = '<div class="nd-source-empty">Source not available — function was not crawled or source was not stored.</div>';
+  } else {
+    var lines    = source.split("\n");
+    var issueMap = {};
+    issues.forEach(function(iss) { issueMap[iss.idx] = iss; });
+
+    var html = "";
+    lines.forEach(function(line, i) {
+      var iss    = issueMap[i];
+      var cls    = "nd-line" + (iss ? (iss.warn ? " nd-warn" : " nd-broken") : "");
+      var absLn  = (lineno || 1) + i;
+      html += '<div class="' + cls + '">' +
+        '<span class="nd-ln">' + absLn + '</span>' +
+        '<span class="nd-code">' + highlightPython(line) + '</span>' +
+        (iss && iss.label ? '<span class="nd-break-marker">' + iss.label + '</span>' : '') +
+      '</div>';
+    });
+    sourceEl.innerHTML = html;
+
+    /* Scroll to first broken line */
+    if (issues.length) {
+      requestAnimationFrame(function() {
+        var firstBroken = sourceEl.querySelector(".nd-broken, .nd-warn");
+        if (firstBroken) firstBroken.scrollIntoView({ block: "center" });
+      });
+    }
+  }
+
+  panel.classList.add("open");
+}
+
+function closeNodePanel() {
+  document.getElementById("nd-panel").classList.remove("open");
+}
+
+/* ── Resize ── */
+window.addEventListener("resize", function() {
+  requestAnimationFrame(drawGraphLines);
+});
+</script>
+{% endblock %}

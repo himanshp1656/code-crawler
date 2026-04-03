@@ -1,179 +1,122 @@
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Code Crawler - Admin</title>
-    <style>
-      body {
-        margin: 0;
-        font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell,
-          Noto Sans, sans-serif;
-        background: #050816;
-        color: white;
-        min-height: 100vh;
-      }
-      .top {
-        padding: 16px 22px;
-        border-bottom: 1px solid #1f2937;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 12px;
-      }
-      .top h2 {
-        margin: 0;
-        color: #22c55e;
-        font-size: 16px;
-      }
-      .logout {
-        background: transparent;
-        border: 1px solid #1f2937;
-        color: white;
-        padding: 8px 12px;
-        border-radius: 10px;
-        cursor: pointer;
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: 420px 1fr;
-        gap: 18px;
-        padding: 18px 22px;
-      }
-      @media (max-width: 980px) {
-        .grid {
-          grid-template-columns: 1fr;
-        }
-      }
-      .card {
-        background: #111827;
-        border: 1px solid #1f2937;
-        border-radius: 14px;
-        padding: 18px;
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
-      }
-      label {
-        display: block;
-        font-size: 12px;
-        color: #9ca3af;
-        margin-bottom: 6px;
-        margin-top: 12px;
-      }
-      input, select {
-        width: 100%;
-        padding: 10px 12px;
-        border-radius: 10px;
-        border: 1px solid #1f2937;
-        background: #0b1220;
-        color: white;
-        outline: none;
-      }
-      button {
-        margin-top: 16px;
-        width: 100%;
-        padding: 10px 12px;
-        border-radius: 10px;
-        border: none;
-        background: #3b82f6;
-        color: #061326;
-        font-weight: 800;
-        cursor: pointer;
-      }
-      .list {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-      }
-      .tenant {
-        border: 1px solid #1f2937;
-        border-radius: 14px;
-        background: rgba(255, 255, 255, 0.03);
-        padding: 14px;
-      }
-      .tenant h3 {
-        margin: 0 0 6px 0;
-        color: #22c55e;
-        font-size: 14px;
-      }
-      .meta {
-        font-size: 12px;
-        color: #9ca3af;
-        margin-top: 2px;
-      }
-      .user {
-        margin-top: 8px;
-        font-size: 13px;
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        gap: 10px;
-      }
-      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-    </style>
-  </head>
-  <body>
-    <div class="top">
-      <h2>Admin Portal</h2>
-      <form method="post" action="/admin/logout">
-        <button class="logout" type="submit">Logout</button>
+{% extends "base.html" %}
+{% block title %}Code Crawler - Admin{% endblock %}
+
+{% block extra_style %}
+  .badge-active  { color: var(--green); font-size: 11px; }
+  .badge-inactive { color: var(--red); font-size: 11px; }
+  .tenant-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: rgba(255, 255, 255, 0.02);
+    padding: 16px;
+  }
+  .tenant-card h3 {
+    font-size: 14px;
+    color: var(--green);
+    margin-bottom: 4px;
+  }
+  .user-row {
+    margin-top: 8px;
+    font-size: 13px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 0;
+    border-top: 1px solid rgba(255,255,255,0.04);
+  }
+{% endblock %}
+
+{% block body %}
+<nav class="navbar">
+  <div class="navbar-brand">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    Admin Portal
+  </div>
+  <div class="navbar-right">
+    <a href="/login" class="btn btn-ghost" style="font-size:12px;">User portal</a>
+    <form method="post" action="/admin/logout">
+      <button class="btn btn-ghost" type="submit">Logout</button>
+    </form>
+  </div>
+</nav>
+
+<div class="page-grid">
+  <div class="list">
+    <div class="card">
+      <div class="card-title">Create tenant</div>
+      <div class="card-hint">Each tenant gets isolated data.</div>
+      <form method="post" action="/admin/tenants">
+        <div class="field">
+          <label for="tid">Tenant ID</label>
+          <input id="tid" name="tenant_id" placeholder="acme" required />
+        </div>
+        <div class="field">
+          <label for="tname">Tenant name</label>
+          <input id="tname" name="tenant_name" placeholder="Acme Inc" required />
+        </div>
+        <div class="field">
+          <label for="atype">Account type</label>
+          <select id="atype" name="account_type">
+            <option value="personal">Personal</option>
+            <option value="organization">Organization</option>
+          </select>
+        </div>
+        <button class="btn btn-blue" type="submit">Create tenant</button>
       </form>
     </div>
 
-    <div class="grid">
-      <div class="list">
-        <div class="card">
-          <h3 style="margin:0 0 8px 0; color:#22c55e;">Create tenant</h3>
-          <form method="post" action="/admin/tenants">
-            <label>tenant_id</label>
-            <input name="tenant_id" placeholder="acme" required />
-            <label>tenant_name</label>
-            <input name="tenant_name" placeholder="Acme Inc" required />
-            <button type="submit">Create tenant</button>
-          </form>
+    <div class="card">
+      <div class="card-title">Create user</div>
+      <div class="card-hint">Assign a login to a tenant.</div>
+      <form method="post" action="/admin/users">
+        <div class="field">
+          <label for="utenant">Tenant</label>
+          <select id="utenant" name="tenant_id" required>
+            {% for t in tenants %}
+              <option value="{{ t.tenant_id }}">{{ t.tenant_id }} &mdash; {{ t.tenant_name }}</option>
+            {% endfor %}
+          </select>
         </div>
-
-        <div class="card">
-          <h3 style="margin:0 0 8px 0; color:#22c55e;">Create user</h3>
-          <form method="post" action="/admin/users">
-            <label>Tenant</label>
-            <select name="tenant_id" required>
-              {% for t in tenants %}
-                <option value="{{ t.tenant_id }}">{{ t.tenant_id }}</option>
-              {% endfor %}
-            </select>
-            <label>Username (use email)</label>
-            <input name="username" placeholder="alice@example.com" required />
-            <label>Password</label>
-            <input name="password" type="password" required />
-            <button type="submit">Create user</button>
-          </form>
+        <div class="field">
+          <label for="uname">Username</label>
+          <input id="uname" name="username" placeholder="alice@example.com" required />
         </div>
-      </div>
+        <div class="field">
+          <label for="upass">Password</label>
+          <input id="upass" name="password" type="password" required />
+        </div>
+        <button class="btn btn-blue" type="submit">Create user</button>
+      </form>
+    </div>
+  </div>
 
-      <div class="list">
-        {% if tenants|length == 0 %}
-          <div class="card">No tenants yet.</div>
+  <div class="list">
+    {% if tenants|length == 0 %}
+      <div class="card empty-state">No tenants yet. Create one to get started.</div>
+    {% endif %}
+
+    {% for t in tenants %}
+      <div class="tenant-card">
+        <h3 class="mono">{{ t.tenant_id }}</h3>
+        <div class="meta">{{ t.tenant_name }}</div>
+        <span style="display:inline-block;margin-top:4px;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;{% if t.account_type == 'organization' %}background:rgba(168,85,247,0.12);color:var(--purple);border:1px solid rgba(168,85,247,0.25);{% else %}background:rgba(59,130,246,0.12);color:var(--blue);border:1px solid rgba(59,130,246,0.25);{% endif %}">{{ t.account_type or 'personal' }}</span>
+
+        {% set users = users_by_tenant.get(t.tenant_id, []) %}
+        {% if users|length == 0 %}
+          <div class="meta" style="margin-top:8px;">No users yet</div>
         {% endif %}
 
-        {% for t in tenants %}
-          <div class="tenant">
-            <h3><span class="mono">{{ t.tenant_id }}</span></h3>
-            <div class="meta">{{ t.tenant_name }}</div>
-
-            {% set users = users_by_tenant.get(t.tenant_id, []) %}
-            {% if users|length == 0 %}
-              <div class="meta">No users</div>
-            {% endif %}
-
-            {% for u in users %}
-              <div class="user">
-                <div class="mono">{{ u.username }}</div>
-                <div class="meta">{% if u.is_active %}active{% else %}inactive{% endif %}</div>
-              </div>
-            {% endfor %}
+        {% for u in users %}
+          <div class="user-row">
+            <span class="mono">{{ u.username }}</span>
+            <span class="{% if u.is_active %}badge-active{% else %}badge-inactive{% endif %}">
+              {% if u.is_active %}active{% else %}inactive{% endif %}
+            </span>
           </div>
         {% endfor %}
       </div>
-    </div>
-  </body>
-</html>
-
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

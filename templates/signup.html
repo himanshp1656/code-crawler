@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}Code Crawler - Sign Up{% endblock %}
+
+{% block extra_style %}
+  .type-toggle {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 6px;
+  }
+  .type-option {
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--input-bg);
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.2s;
+  }
+  .type-option:hover {
+    border-color: var(--text-dim);
+  }
+  .type-option.active {
+    border-color: var(--green);
+    background: rgba(34, 197, 94, 0.08);
+  }
+  .type-option .type-icon {
+    font-size: 20px;
+    margin-bottom: 4px;
+  }
+  .type-option .type-label {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .type-option .type-desc {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+  .handle-preview {
+    margin-top: 8px;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    background: rgba(34, 197, 94, 0.06);
+    border: 1px solid rgba(34, 197, 94, 0.15);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--green);
+    display: none;
+  }
+  .handle-status {
+    margin-top: 6px;
+    font-size: 12px;
+    min-height: 18px;
+  }
+  .handle-status.ok { color: var(--green); }
+  .handle-status.taken { color: var(--red); }
+  .handle-status.checking { color: var(--text-dim); }
+{% endblock %}
+
+{% block body %}
+<div class="center-page">
+  <div class="card center-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+      <span style="font-size:18px;font-weight:700;color:var(--green);">Create your account</span>
+    </div>
+    <p style="font-size:13px;color:var(--text-dim);margin-bottom:18px;">Pick a handle for your public profile URL.</p>
+
+    <form method="post" action="/signup" id="signup-form">
+      <div class="field">
+        <label>Account type</label>
+        <div class="type-toggle">
+          <div class="type-option active" data-type="personal" onclick="selectType(this)">
+            <div class="type-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+            <div class="type-label">Personal</div>
+            <div class="type-desc">For individual use</div>
+          </div>
+          <div class="type-option" data-type="organization" onclick="selectType(this)">
+            <div class="type-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </div>
+            <div class="type-label">Organization</div>
+            <div class="type-desc">For teams &amp; companies</div>
+          </div>
+        </div>
+        <input type="hidden" name="account_type" id="account-type" value="{{ account_type or 'personal' }}" />
+      </div>
+
+      <div class="field">
+        <label for="handle">Handle</label>
+        <input id="handle" name="handle" autocomplete="off" required
+               placeholder="my-handle"
+               pattern="[a-z0-9]([a-z0-9\-]*[a-z0-9])?"
+               minlength="3" maxlength="39"
+               value="{{ handle or '' }}" />
+        <div class="handle-status" id="handle-status"></div>
+        <div class="handle-preview" id="handle-preview"></div>
+      </div>
+
+      <div class="field">
+        <label for="display_name">Display name</label>
+        <input id="display_name" name="display_name" required
+               placeholder="Acme Inc" value="{{ display_name or '' }}" />
+      </div>
+
+      <div class="field">
+        <label for="username">Email / Username</label>
+        <input id="username" name="username" required autocomplete="username"
+               placeholder="you@company.com" value="{{ username or '' }}" />
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" required
+               autocomplete="new-password" minlength="8" />
+      </div>
+
+      <button class="btn btn-green" type="submit" id="signup-btn">Create account</button>
+    </form>
+
+    {% if errors %}
+      <div class="alert-error">{{ errors }}</div>
+    {% endif %}
+
+    <p style="text-align:center;margin-top:16px;font-size:12px;color:var(--text-dim);">
+      Already have an account? <a href="/login">Sign in</a>
+    </p>
+  </div>
+</div>
+
+<script>
+function selectType(el) {
+  document.querySelectorAll('.type-option').forEach(function(o) { o.classList.remove('active'); });
+  el.classList.add('active');
+  document.getElementById('account-type').value = el.dataset.type;
+}
+
+// Set active state on load
+(function() {
+  var current = document.getElementById('account-type').value;
+  document.querySelectorAll('.type-option').forEach(function(o) {
+    o.classList.toggle('active', o.dataset.type === current);
+  });
+})();
+
+// Live handle check
+var handleTimer = null;
+var handleInput = document.getElementById('handle');
+var statusEl = document.getElementById('handle-status');
+var previewEl = document.getElementById('handle-preview');
+
+handleInput.addEventListener('input', function() {
+  var val = handleInput.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+  handleInput.value = val;
+
+  if (val.length < 3) {
+    statusEl.textContent = '';
+    statusEl.className = 'handle-status';
+    previewEl.style.display = 'none';
+    return;
+  }
+
+  previewEl.textContent = window.location.origin + '/' + val;
+  previewEl.style.display = 'block';
+
+  statusEl.textContent = 'Checking...';
+  statusEl.className = 'handle-status checking';
+
+  clearTimeout(handleTimer);
+  handleTimer = setTimeout(function() {
+    fetch('/check-handle?handle=' + encodeURIComponent(val))
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (handleInput.value.toLowerCase() !== val) return;
+        if (data.available) {
+          statusEl.textContent = 'Available';
+          statusEl.className = 'handle-status ok';
+        } else {
+          statusEl.textContent = data.errors.join(' ');
+          statusEl.className = 'handle-status taken';
+        }
+      });
+  }, 400);
+});
+
+document.getElementById('signup-form').addEventListener('submit', function() {
+  var btn = document.getElementById('signup-btn');
+  btn.disabled = true;
+  btn.textContent = 'Creating...';
+});
+</script>
+{% endblock %}
