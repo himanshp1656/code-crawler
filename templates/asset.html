@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Asset Lineage Graph</title>
+
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;600&display=swap" rel="stylesheet"/>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+
+body{
+  font-family:'Inter',system-ui;
+  background:hsl(230,84%,5%);
+  color:hsl(210,40%,92%);
+  height:100vh;
+  display:flex;
+  flex-direction:column;
+}
+
+.header{
+  padding:16px 24px;
+  border-bottom:1px solid hsl(224,20%,18%);
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+
+#search{
+  background:hsl(224,50%,8%);
+  border:1px solid hsl(224,20%,18%);
+  padding:8px 12px;
+  border-radius:8px;
+  color:white;
+  width:300px;
+  font-family:'JetBrains Mono',monospace;
+}
+
+#search-results{
+  position:absolute;
+  top:70px;
+  right:24px;
+  width:300px;
+  background:hsl(224,50%,8%);
+  border:1px solid hsl(224,20%,18%);
+  border-radius:8px;
+  max-height:300px;
+  overflow-y:auto;
+  display:none;
+  z-index:10;
+}
+
+.search-item{
+  padding:10px;
+  cursor:pointer;
+  font-size:13px;
+}
+
+.search-item:hover{
+  background:hsl(217,91%,60%,0.15);
+}
+
+#lineage-wrapper{
+  flex:1;
+  position:relative;
+  overflow:auto;
+}
+
+#lineage{
+  display:flex;
+  align-items:flex-start;
+  padding:40px;
+  gap:120px;
+  position:relative;
+}
+
+.node-column{
+  display:flex;
+  flex-direction:column;
+  gap:30px;
+  min-width:260px;
+}
+
+.card{
+  background:hsl(224,50%,8%);
+  border:1px solid hsl(224,20%,18%);
+  border-radius:12px;
+  padding:16px;
+  cursor:pointer;
+  transition:.2s;
+  position:relative;
+}
+
+.card:hover{
+  border-color:hsl(217,91%,60%);
+  box-shadow:0 0 20px -5px hsl(217,91%,60%,0.3);
+}
+
+.title{
+  font-family:'JetBrains Mono',monospace;
+  font-size:13px;
+  font-weight:600;
+}
+
+.meta{
+  font-size:11px;
+  color:hsl(215,20%,55%);
+  margin-top:4px;
+}
+
+svg{
+  position:absolute;
+  top:0;
+  left:0;
+  pointer-events:none;
+}
+</style>
+</head>
+
+<body>
+
+<div class="header">
+  <h3>Asset Lineage Graph</h3>
+  <input id="search" placeholder="Search asset..."/>
+</div>
+
+<div id="search-results"></div>
+
+<div id="lineage-wrapper">
+  <svg id="edges-svg"></svg>
+  <div id="lineage"></div>
+</div>
+
+<script>
+
+const API_URL="/lineage-data";
+const urlParams=new URLSearchParams(window.location.search);
+const repo=urlParams.get("repo")||"";
+const branch=urlParams.get("branch")||"";
+const assetId=urlParams.get("asset_id")||"";
+
+fetch(API_URL+"?"+new URLSearchParams({repo,branch}).toString())
+.then(r=>r.json())
+.then(data=>{
+  window._data=data;
+  window._nodeMap=new Map(data.nodes.map(n=>[n.id,n]));
+
+  window._graph={
+    nodes:new Map(),
+    edges:new Set()
+  };
+
+  setupSearch();
+
+  const initial=assetId||data.nodes[0]?.id;
+  if(initial){
+    loadRoot(initial);
+  }
+});
+
+function loadRoot(id){
+  window._graph.nodes.clear();
+  window._graph.edges.clear();
+  window._graph.nodes.set(id,{id:id,level:0});
+  renderGraph();
+}
+
+function setupSearch(){
+
+  const input=document.getElementById("search");
+  const results=document.getElementById("search-results");
+
+  input.addEventListener("input",()=>{
+    const q=input.value.toLowerCase();
+    results.innerHTML="";
+
+    if(!q){
+      results.style.display="none";
+      return;
+    }
+
+    const matches=window._data.nodes
+      .sort((a,b)=>{
+        const aMatch=a.name.toLowerCase().includes(q);
+        const bMatch=b.name.toLowerCase().includes(q);
+        return (bMatch?1:0)-(aMatch?1:0);
+      })
+      .filter(n=>n.name.toLowerCase().includes(q))
+      .slice(0,20);
+
+    matches.forEach(n=>{
+      const div=document.createElement("div");
+      div.className="search-item";
+      div.textContent=n.name.split("/").pop();
+      div.onclick=()=>{
+        results.style.display="none";
+        input.value="";
+        loadRoot(n.id);
+      };
+      results.appendChild(div);
+    });
+
+    results.style.display="block";
+  });
+}
+
+function createCard(node){
+  const div=document.createElement("div");
+  div.className="card";
+  div.dataset.nodeId=node.id;
+
+  const short=node.name.split("/").pop();
+
+  div.innerHTML=`
+    <div class="title">${short}</div>
+    <div class="meta">${node.file}:${node.lineno}</div>
+  `;
+
+  div.onclick=()=>expandNode(node);
+
+  return div;
+}
+
+function expandNode(node){
+
+  const graph=window._graph;
+  const data=window._data;
+
+  const currentLevel=graph.nodes.get(node.id).level;
+
+  // upstream
+  (node.upstream_ids||[]).forEach(uid=>{
+    if(!graph.nodes.has(uid)){
+      graph.nodes.set(uid,{id:uid,level:currentLevel-1});
+    }
+    graph.edges.add(uid+"|"+node.id);
+  });
+
+  // downstream
+  data.nodes.forEach(n=>{
+    if((n.upstream_ids||[]).includes(node.id)){
+      if(!graph.nodes.has(n.id)){
+        graph.nodes.set(n.id,{id:n.id,level:currentLevel+1});
+      }
+      graph.edges.add(node.id+"|"+n.id);
+    }
+  });
+
+  renderGraph();
+}
+
+function renderGraph(){
+
+  const lineage=document.getElementById("lineage");
+  lineage.innerHTML="";
+  const svg=document.getElementById("edges-svg");
+  svg.innerHTML="";
+
+  const graph=window._graph;
+  const nodeMap=window._nodeMap;
+
+  const levels={};
+
+  for(const [id,info] of graph.nodes.entries()){
+    if(!levels[info.level]) levels[info.level]=[];
+    levels[info.level].push(id);
+  }
+
+  const sortedLevels=Object.keys(levels).map(Number).sort((a,b)=>a-b);
+
+  sortedLevels.forEach(level=>{
+    const column=document.createElement("div");
+    column.className="node-column";
+
+    levels[level].forEach(id=>{
+      const node=nodeMap.get(id);
+      if(!node) return;
+      column.appendChild(createCard(node));
+    });
+
+    lineage.appendChild(column);
+  });
+
+  setTimeout(drawEdges,50);
+}
+
+function drawEdges(){
+
+  const svg=document.getElementById("edges-svg");
+  const wrapper=document.getElementById("lineage-wrapper");
+  const rect=wrapper.getBoundingClientRect();
+
+  svg.setAttribute("width",wrapper.scrollWidth);
+  svg.setAttribute("height",wrapper.scrollHeight);
+
+  window._graph.edges.forEach(edge=>{
+    const [sourceId,targetId]=edge.split("|");
+
+    const sEl=document.querySelector(`[data-node-id="${sourceId}"]`);
+    const tEl=document.querySelector(`[data-node-id="${targetId}"]`);
+
+    if(!sEl||!tEl) return;
+
+    const s=sEl.getBoundingClientRect();
+    const t=tEl.getBoundingClientRect();
+
+    const x1=s.right-rect.left+wrapper.scrollLeft;
+    const y1=s.top-rect.top+wrapper.scrollTop+s.height/2;
+
+    const x2=t.left-rect.left+wrapper.scrollLeft;
+    const y2=t.top-rect.top+wrapper.scrollTop+t.height/2;
+
+    const path=document.createElementNS("http://www.w3.org/2000/svg","path");
+
+    const curve=`M ${x1} ${y1} C ${x1+80} ${y1}, ${x2-80} ${y2}, ${x2} ${y2}`;
+
+    path.setAttribute("d",curve);
+    path.setAttribute("stroke","#3b82f6");
+    path.setAttribute("stroke-width","2");
+    path.setAttribute("fill","none");
+    path.setAttribute("opacity","0.7");
+
+    svg.appendChild(path);
+  });
+}
+
+</script>
+</body>
+</html>

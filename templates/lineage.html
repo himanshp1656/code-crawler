@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>Code Lineage</title>
+
+<style>
+body {
+  margin:0;
+  font-family:system-ui;
+  background:#050816;
+  color:white;
+}
+
+.header {
+  padding:20px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+
+#search {
+  background:#111827;
+  border:1px solid #1f2937;
+  padding:8px 12px;
+  border-radius:8px;
+  color:white;
+  width:300px;
+}
+
+#container {
+  padding:20px;
+  display:grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap:16px;
+}
+
+.card {
+  background:#111827;
+  border-radius:12px;
+  padding:14px;
+  box-shadow:0 2px 6px rgba(0,0,0,0.4);
+  cursor:pointer;
+  transition:0.2s;
+}
+
+.card:hover {
+  transform:translateY(-3px);
+  box-shadow:0 4px 12px rgba(0,0,0,0.6);
+}
+
+.title {
+  font-weight:600;
+  color:#22c55e;
+  margin-bottom:6px;
+}
+
+.meta {
+  font-size:12px;
+  color:#9ca3af;
+  margin-top:2px;
+}
+
+.counts {
+  margin-top:6px;
+  font-size:12px;
+}
+
+.upstream { color:#3b82f6; }
+.downstream { color:#a855f7; }
+</style>
+</head>
+
+<body>
+
+<div class="header">
+  <h2>Function Lineage Assets</h2>
+  <input id="search" placeholder="Search functions..." />
+</div>
+
+<div id="container"></div>
+
+<script>
+const params = new URLSearchParams({
+  repo: "{{ repo }}",
+  branch: "{{ branch }}"
+});
+
+fetch("/lineage-data?" + params.toString())
+.then(r => r.json())
+.then(data => {
+    window._nodes = data.nodes;
+    render(data.nodes);
+    setupSearch();
+});
+
+function computeDownstreamCounts(nodes) {
+  const downstreamMap = {};
+  nodes.forEach(n => downstreamMap[n.id] = 0);
+
+  nodes.forEach(n => {
+    (n.upstream_ids || []).forEach(uid => {
+      if (downstreamMap[uid] !== undefined) {
+        downstreamMap[uid]++;
+      }
+    });
+  });
+
+  return downstreamMap;
+}
+
+function render(nodes) {
+  const container = document.getElementById("container");
+  container.innerHTML = "";
+
+  const downstreamMap = computeDownstreamCounts(window._nodes);
+
+  nodes.forEach(n => {
+    const div = document.createElement("div");
+    div.className = "card";
+
+    const shortName = n.name.split(".").slice(-1)[0];
+
+    div.innerHTML = `
+       <div class="title">${shortName}</div>
+       <div class="meta">File: ${n.file}</div>
+       <div class="meta">Line: ${n.lineno}</div>
+       <div class="counts">
+         <span class="upstream">⬆ Upstream: ${(n.upstream_ids || []).length}</span>
+         &nbsp;&nbsp;
+         <span class="downstream">⬇ Downstream: ${downstreamMap[n.id]}</span>
+       </div>
+    `;
+
+    div.onclick = () => {
+        window.location =
+          "/asset?repo=" +
+          encodeURIComponent("{{ repo }}") +
+          "&branch=" +
+          encodeURIComponent("{{ branch }}") +
+          "&asset_id=" +
+          encodeURIComponent(n.id);
+     };
+
+    container.appendChild(div);
+  });
+}
+
+function setupSearch() {
+  const searchInput = document.getElementById("search");
+
+  searchInput.addEventListener("input", () => {
+    const query = searchInput.value.toLowerCase();
+
+    const filtered = window._nodes.filter(n =>
+      n.name.toLowerCase().includes(query)
+    );
+
+    render(filtered);
+  });
+}
+</script>
+
+</body>
+</html>

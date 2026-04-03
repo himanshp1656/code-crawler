@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Asset Lineage</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: hsl(230, 84%, 5%);
+      color: hsl(210, 40%, 92%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    code, .mono { font-family: 'JetBrains Mono', monospace; }
+
+    .header {
+      border-bottom: 1px solid hsl(224, 20%, 18%);
+      background: hsl(224, 50%, 8%, 0.5);
+      backdrop-filter: blur(8px);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .header-icon {
+      background: hsl(217, 91%, 60%, 0.15);
+      color: hsl(217, 91%, 60%);
+      padding: 8px;
+      border-radius: 8px;
+      display: flex;
+    }
+    .header h1 { font-size: 18px; font-weight: 600; }
+    .header p { font-size: 12px; color: hsl(215, 20%, 55%); font-family: 'JetBrains Mono', monospace; }
+
+    .selector-bar {
+      border-bottom: 1px solid hsl(224, 20%, 18%);
+      background: hsl(224, 50%, 8%, 0.3);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .selector-bar svg { color: hsl(215, 20%, 55%); }
+    .selector-bar select {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: hsl(210, 40%, 92%);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      outline: none;
+      cursor: pointer;
+    }
+    .selector-bar select option {
+      background: hsl(224, 50%, 8%);
+      color: hsl(210, 40%, 92%);
+    }
+
+    .lineage {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      padding: 24px;
+      overflow-x: auto;
+      gap: 0;
+    }
+
+    .node-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex-shrink: 0;
+      min-width: 280px;
+      max-width: 320px;
+    }
+
+    .card {
+      background: hsl(224, 50%, 8%);
+      border: 1px solid hsl(224, 20%, 18%);
+      border-radius: 12px;
+      padding: 16px;
+      transition: all 0.3s ease;
+      animation: fadeIn 0.3s ease;
+      cursor: pointer;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .card.upstream {
+      border-color: hsl(170, 80%, 50%, 0.3);
+    }
+    .card.upstream:hover {
+      border-color: hsl(170, 80%, 50%, 0.6);
+      box-shadow: 0 0 20px -5px hsl(170, 80%, 50%, 0.3);
+    }
+
+    .card.main {
+      border-color: hsl(217, 91%, 60%, 0.5);
+      box-shadow: 0 0 20px -5px hsl(217, 91%, 60%, 0.3), 0 0 40px -10px hsl(217, 91%, 60%, 0.15);
+      transform: scale(1.03);
+      cursor: default;
+    }
+
+    .card.downstream {
+      border-color: hsl(280, 70%, 60%, 0.3);
+    }
+    .card.downstream:hover {
+      border-color: hsl(280, 70%, 60%, 0.6);
+      box-shadow: 0 0 20px -5px hsl(280, 70%, 60%, 0.3);
+    }
+
+    .card-inner { display: flex; align-items: flex-start; gap: 12px; }
+
+    .card-badge {
+      margin-top: 2px;
+      padding: 8px;
+      border-radius: 8px;
+      display: flex;
+      flex-shrink: 0;
+    }
+    .card-badge.upstream { background: hsl(170, 80%, 50%, 0.15); color: hsl(170, 80%, 50%); }
+    .card-badge.main { background: hsl(217, 91%, 60%, 0.15); color: hsl(217, 91%, 60%); }
+    .card-badge.downstream { background: hsl(280, 70%, 60%, 0.15); color: hsl(280, 70%, 60%); }
+
+    .card-content { min-width: 0; flex: 1; }
+    .card-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .card-module {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: hsl(215, 20%, 55%);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .card-file {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: hsl(215, 20%, 55%);
+      margin-top: 8px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .connector {
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+      padding: 0 4px;
+    }
+    .connector-line {
+      display: flex;
+      align-items: center;
+    }
+    .connector-bar {
+      width: 40px;
+      height: 2px;
+      animation: growLine 0.5s ease forwards;
+    }
+    .connector-bar.left {
+      background: linear-gradient(90deg, hsl(170, 80%, 50%, 0.6), hsl(217, 91%, 60%, 0.6));
+      transform-origin: right;
+    }
+    .connector-bar.right {
+      background: linear-gradient(90deg, hsl(217, 91%, 60%, 0.6), hsl(280, 70%, 60%, 0.6));
+      transform-origin: left;
+    }
+    @keyframes growLine {
+      from { transform: scaleX(0); }
+      to { transform: scaleX(1); }
+    }
+    .connector-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      animation: fadeIn 0.3s ease 0.4s both;
+    }
+    .connector-dot.primary { background: hsl(217, 91%, 60%); }
+    .connector-dot.upstream { background: hsl(170, 80%, 50%); }
+    .connector-dot.downstream { background: hsl(280, 70%, 60%); }
+
+    .empty {
+      border: 1px dashed hsl(224, 20%, 18%);
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+      font-size: 13px;
+      color: hsl(215, 20%, 55%);
+    }
+
+    .icon { display: inline-flex; vertical-align: middle; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-icon">
+      <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/></svg>
+    </div>
+    <div>
+      <h1>Asset Lineage</h1>
+      <p id="repo-label">Loading...</p>
+    </div>
+  </div>
+
+  <div class="selector-bar">
+    <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+    <select id="asset-select"></select>
+  </div>
+
+  <div class="lineage" id="lineage"></div>
+
+  <script>
+    const API_URL = "/lineage-data";
+    const urlParams = new URLSearchParams(window.location.search);
+    const repo = urlParams.get("repo") || "";
+    const branch = urlParams.get("branch") || "";
+    const assetId = urlParams.get("asset_id") || "";
+
+    document.getElementById("repo-label").textContent = repo || "code-crawler";
+
+    const params = new URLSearchParams({ repo, branch });
+
+    fetch(API_URL + "?" + params.toString())
+      .then(r => r.json())
+      .then(data => {
+        window._lineageData = data;
+        window._nodeMap = new Map(data.nodes.map(n => [n.id, n]));
+        populateSelect(data.nodes);
+        const initialId = assetId || (data.nodes.length > 0 ? data.nodes[0].id : "");
+        if (initialId) {
+          document.getElementById("asset-select").value = initialId;
+          // Start with just the selected node, its immediate upstream and downstream
+          window._chain = [{ id: initialId, type: "main" }];
+          renderChain();
+        }
+      })
+      .catch(err => {
+        document.getElementById("lineage").innerHTML =
+          '<div class="empty" style="margin:auto;">Failed to load lineage data: ' + err.message + '</div>';
+      });
+
+    function getShortName(fullName) {
+      const parts = fullName.split("/");
+      return parts[parts.length - 1] || fullName;
+    }
+
+    function parseName(fullName) {
+      const short = getShortName(fullName);
+      const segments = short.split(".");
+      const funcName = segments[segments.length - 1];
+      const modulePath = segments.slice(0, -1).join(".");
+      return { funcName, modulePath };
+    }
+
+    function populateSelect(nodes) {
+      const select = document.getElementById("asset-select");
+      select.innerHTML = "";
+      nodes.forEach(n => {
+        const opt = document.createElement("option");
+        opt.value = n.id;
+        opt.textContent = getShortName(n.name);
+        select.appendChild(opt);
+      });
+      select.addEventListener("change", () => {
+        window._chain = [{ id: select.value, type: "main" }];
+        renderChain();
+      });
+    }
+
+    const iconBranch = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>';
+    const iconFile = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>';
+
+    // Chain: array of { id, type: "main" }
+    // We derive: for each node in chain, show its upstream to its left and downstream to its right
+    // Clicking upstream prepends to chain, clicking downstream appends
+
+    function createCard(node, variant, onClick) {
+      const { funcName, modulePath } = parseName(node.name);
+      const card = document.createElement("div");
+      card.className = "card " + variant;
+      card.innerHTML = `
+        <div class="card-inner">
+          <div class="card-badge ${variant}">${iconBranch}</div>
+          <div class="card-content">
+            <div class="card-title">${funcName}</div>
+            <div class="card-module">${modulePath}</div>
+            <div class="card-file">${iconFile} <span>${node.file}:${node.lineno}</span></div>
+          </div>
+        </div>
+      `;
+      if (onClick) card.onclick = onClick;
+      return card;
+    }
+
+    function createConnector(direction) {
+      const c = document.createElement("div");
+      c.className = "connector";
+      const barClass = direction === "left" ? "left" : "right";
+      const dotClass = direction === "left" ? "upstream" : "downstream";
+      c.innerHTML = `<div class="connector-line"><div class="connector-bar ${barClass}"></div><div class="connector-dot ${dotClass}"></div></div>`;
+      return c;
+    }
+
+    function renderChain() {
+      const container = document.getElementById("lineage");
+      container.innerHTML = "";
+      const nodeMap = window._nodeMap;
+      const chain = window._chain;
+      const data = window._lineageData;
+
+      // Collect IDs already in chain
+      const chainIds = new Set(chain.map(c => c.id));
+
+      // For leftmost node: show its upstream as a clickable group on the far left
+      const leftmostNode = nodeMap.get(chain[0].id);
+      if (leftmostNode) {
+        const upstreamNodes = (leftmostNode.upstream_ids || []).map(id => nodeMap.get(id)).filter(Boolean);
+        if (upstreamNodes.length > 0) {
+          const group = document.createElement("div");
+          group.className = "node-group";
+          upstreamNodes.forEach(n => {
+            group.appendChild(createCard(n, "upstream", () => {
+              // Prepend to chain
+              window._chain.unshift({ id: n.id, type: "main" });
+              renderChain();
+              // Scroll to left
+              container.scrollLeft = 0;
+            }));
+          });
+          container.appendChild(group);
+          container.appendChild(createConnector("left"));
+        }
+      }
+
+      // Render chain nodes with connectors between them
+      chain.forEach((entry, i) => {
+        const node = nodeMap.get(entry.id);
+        if (!node) return;
+
+        if (i > 0) {
+          container.appendChild(createConnector("right"));
+        }
+
+        const group = document.createElement("div");
+        group.className = "node-group";
+        group.appendChild(createCard(node, "main"));
+        container.appendChild(group);
+      });
+
+      // For rightmost node: show its downstream as a clickable group on the far right
+      const rightmostNode = nodeMap.get(chain[chain.length - 1].id);
+      if (rightmostNode) {
+        const downstreamNodes = data.nodes.filter(n => (n.upstream_ids || []).includes(rightmostNode.id));
+        if (downstreamNodes.length > 0) {
+          container.appendChild(createConnector("right"));
+          const group = document.createElement("div");
+          group.className = "node-group";
+          downstreamNodes.forEach(n => {
+            group.appendChild(createCard(n, "downstream", () => {
+              // Append to chain
+              window._chain.push({ id: n.id, type: "main" });
+              renderChain();
+              // Scroll to right
+              container.scrollLeft = container.scrollWidth;
+            }));
+          });
+          container.appendChild(group);
+        }
+      }
+    }
+  </script>
+</body>
+</html>
