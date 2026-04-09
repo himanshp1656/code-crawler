@@ -158,9 +158,13 @@ def build_lineage(
     assets: Dict[str, dict] = {}
     upstream_sets: Dict[str, set] = {}
 
+    # Build a file_path → FileParseResult lookup for module_context access
+    file_results_by_path = {fr.path: fr for fr in files.values()}
+
     # Create assets for each function
     for fn in func_index.values():
         asset_id = fn.id
+        fr = file_results_by_path.get(fn.file)
         assets[asset_id] = {
             "id": asset_id,
             "name": fn.qualname,
@@ -169,6 +173,7 @@ def build_lineage(
             "end_lineno": fn.end_lineno,
             "source": fn.source,
             "upstream_ids": [],
+            "module_context": fr.module_context if fr else {"imports": [], "globals": {}},
         }
         upstream_sets[asset_id] = set()
 

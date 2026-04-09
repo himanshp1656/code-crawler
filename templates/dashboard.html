@@ -1,6 +1,24 @@
 {% extends "base.html" %}
 {% block title %}Code Crawler - Dashboard{% endblock %}
 
+{% block extra_style %}
+.branch-pill {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 20px;
+  font-size: 11px; font-family: 'JetBrains Mono', monospace;
+  background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.25);
+  color: var(--blue); text-decoration: none; transition: all 0.2s;
+}
+.branch-pill:hover { background: rgba(59,130,246,0.2); text-decoration: none; }
+.compare-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px; border-radius: 20px; font-size: 11px;
+  background: rgba(168,85,247,0.1); border: 1px solid rgba(168,85,247,0.25);
+  color: var(--purple); text-decoration: none; transition: all 0.2s;
+}
+.compare-link:hover { background: rgba(168,85,247,0.2); text-decoration: none; }
+{% endblock %}
+
 {% block body %}
 <nav class="navbar">
   <div class="navbar-brand">
@@ -42,22 +60,30 @@
     <div class="card-hint">Repositories already crawled for this tenant.</div>
 
     <div class="list">
-      {% if lineages|length == 0 %}
+      {% if repos|length == 0 %}
         <div class="empty-state">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:10px;opacity:0.5;"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/></svg>
           <div>No lineage yet. Start a crawl to get started.</div>
         </div>
       {% endif %}
 
-      {% for l in lineages %}
-        <a href="/lineage-ui?repo={{ l.repo_q }}&branch={{ l.branch_q }}" style="text-decoration:none;">
-          <div class="list-item">
-            <div style="font-weight:600;color:var(--green);">{{ l.repo }}</div>
-            <div class="meta">
-              <span class="mono">{{ l.branch }}</span>
-            </div>
+      {% for r in repos %}
+        <div class="list-item">
+          <div style="font-weight:600;color:var(--green);margin-bottom:8px;">{{ r.repo }}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+            {% for b in r.branches %}
+              <a href="/lineage-ui?repo={{ r.repo_q }}&branch={{ b.branch_q }}" class="branch-pill">
+                {{ b.branch }}
+              </a>
+            {% endfor %}
+            {% if r.branches|length > 1 %}
+              <a href="/branch-compare?repo={{ r.repo_q }}" class="compare-link">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+                Compare branches
+              </a>
+            {% endif %}
           </div>
-        </a>
+        </div>
       {% endfor %}
     </div>
   </div>

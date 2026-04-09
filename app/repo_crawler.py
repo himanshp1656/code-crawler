@@ -28,7 +28,7 @@ def clone_repository(
     - If clone fails, we clean our temp directory so the next retry starts clean.
     """
     if base_dir is None:
-        base_dir = os.path.join(tempfile.gettempdir(), "code_crawler_repos")
+        base_dir = os.path.join(os.getcwd(), "output", "repos")
 
     os.makedirs(base_dir, exist_ok=True)
 

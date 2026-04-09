@@ -52,6 +52,7 @@ class LineageRepository:
                         "lineno": int(a["lineno"]),
                         "end_lineno": a.get("end_lineno"),
                         "source": a.get("source"),
+                        "module_context": a.get("module_context"),
                         "upstream_ids": a.get("upstream_ids") or [],
                     }
                     for a in lineage_assets
@@ -60,6 +61,63 @@ class LineageRepository:
 
         await self._s.flush()
         return len(lineage_assets)
+
+    async def list_branches_for_repo(self, tenant_id: str, repo: str) -> List[str]:
+        result = await self._s.execute(
+            select(distinct(LineageNode.branch))
+            .where(LineageNode.tenant_id == tenant_id, LineageNode.repo == repo)
+            .order_by(LineageNode.branch)
+        )
+        return [row[0] for row in result.all()]
+
+    async def list_functions_for_branch(
+        self, tenant_id: str, repo: str, branch: str
+    ) -> List[Dict[str, Any]]:
+        result = await self._s.execute(
+            select(LineageNode.asset_id, LineageNode.name, LineageNode.file_path)
+            .where(
+                LineageNode.tenant_id == tenant_id,
+                LineageNode.repo == repo,
+                LineageNode.branch == branch,
+            )
+            .order_by(LineageNode.name)
+        )
+        return [
+            {"id": row.asset_id, "name": row.name, "file": row.file_path}
+            for row in result.all()
+        ]
+
+    async def fetch_node_by_name(
+        self, tenant_id: str, repo: str, branch: str, name: str
+    ) -> Optional[Dict[str, Any]]:
+        result = await self._s.execute(
+            select(
+                LineageNode.asset_id,
+                LineageNode.name,
+                LineageNode.file_path,
+                LineageNode.lineno,
+                LineageNode.end_lineno,
+                LineageNode.source,
+            )
+            .where(
+                LineageNode.tenant_id == tenant_id,
+                LineageNode.repo == repo,
+                LineageNode.branch == branch,
+                LineageNode.name == name,
+            )
+            .limit(1)
+        )
+        row = result.one_or_none()
+        if not row:
+            return None
+        return {
+            "id": row.asset_id,
+            "name": row.name,
+            "file": row.file_path,
+            "lineno": row.lineno,
+            "end_lineno": row.end_lineno,
+            "source": row.source,
+        }
 
     async def list_repo_branches(self, tenant_id: str) -> List[Dict[str, str]]:
         result = await self._s.execute(
@@ -119,6 +177,7 @@ class LineageRepository:
                 LineageNode.lineno,
                 LineageNode.end_lineno,
                 LineageNode.source,
+                LineageNode.module_context,
                 LineageNode.upstream_ids,
             ).where(
                 LineageNode.tenant_id == tenant_id,
@@ -138,6 +197,7 @@ class LineageRepository:
             "lineno": row.lineno,
             "end_lineno": row.end_lineno,
             "source": row.source,
+            "module_context": row.module_context,
             "upstream_ids": row.upstream_ids or [],
         }
 

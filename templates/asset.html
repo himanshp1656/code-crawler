@@ -409,7 +409,7 @@
   .sidebar {
     position: fixed;
     top: 0; right: 0;
-    width: min(580px, 90vw);
+    width: min(700px, 95vw);
     height: 100vh;
     background: var(--bg);
     border-left: 1px solid var(--border);
@@ -537,7 +537,43 @@
     flex: 1;
     overflow: hidden;
     position: relative;
+    min-height: 0;
   }
+  /* ── Sidebar left-edge resize handle ── */
+  .sb-resize-handle {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 5px;
+    cursor: col-resize;
+    z-index: 10;
+    background: transparent;
+    border-radius: 0 3px 3px 0;
+    transition: background 0.2s;
+  }
+  .sb-resize-handle:hover  { background: rgba(59,130,246,0.3); }
+  .sb-resize-handle.dragging { background: var(--blue); }
+
+  /* ── Code / Run-panel drag divider ── */
+  .sb-divider {
+    height: 6px;
+    flex-shrink: 0;
+    cursor: row-resize;
+    background: var(--border);
+    position: relative;
+    transition: background 0.15s;
+  }
+  .sb-divider::after {
+    content: '';
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: 44px; height: 2px;
+    border-radius: 1px;
+    background: rgba(255,255,255,0.12);
+  }
+  .sb-divider:hover, .sb-divider.dragging { background: rgba(59,130,246,0.45); }
+  .sb-divider:hover::after, .sb-divider.dragging::after { background: rgba(255,255,255,0.4); }
+
   /* ── Editor: gutter + code side by side ── */
   .sb-editor {
     display: flex;
@@ -598,8 +634,122 @@
   }
   .sb-code-btn.save-btn { border-color: var(--green); color: var(--green); }
   .sb-code-btn.save-btn:hover { background: rgba(34,197,94,0.1); }
+  .sb-code-btn.run-btn  { border-color: var(--cyan); color: var(--cyan); }
+  .sb-code-btn.run-btn:hover  { background: rgba(6,182,212,0.1); }
+  .sb-code-btn.run-btn.active { background: rgba(6,182,212,0.12); border-color: var(--cyan); }
 
-
+  /* ── Run panel in sidebar ── */
+  .sb-run-panel {
+    border-top: 1px solid var(--border);
+    background: rgba(17,24,39,0.4);
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .sb-run-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+  }
+  .sb-run-param-row {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .sb-run-param-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--cyan);
+    width: 90px;
+    flex-shrink: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sb-run-param-input {
+    flex: 1;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 4px 8px;
+    outline: none;
+  }
+  .sb-run-param-input:focus { border-color: var(--blue); }
+  .sb-run-exec-btn {
+    padding: 5px 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    border: 1px solid var(--green);
+    background: rgba(34,197,94,0.1);
+    color: var(--green);
+    align-self: flex-start;
+    transition: all 0.15s;
+  }
+  .sb-run-exec-btn:hover { background: rgba(34,197,94,0.2); }
+  .sb-run-result {
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+  .sb-run-result-row {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    padding: 3px 10px;
+    border-bottom: 1px solid var(--border);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .sb-run-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--green);
+    padding: 8px 10px;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .sb-run-value.err { color: var(--red); }
+  .sb-run-stdout {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text);
+    padding: 6px 10px;
+    border-top: 1px solid var(--border);
+    white-space: pre-wrap;
+  }
+  .sb-run-trace {
+    padding: 6px 10px 2px;
+    border-top: 1px solid var(--border);
+  }
+  .sb-trace-entry {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 3px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    border-bottom: 1px solid rgba(31,41,55,0.4);
+  }
+  .sb-trace-entry:last-child { border-bottom: none; }
+  .sb-trace-fn { color: var(--cyan); min-width: 140px; flex-shrink: 0; }
+  .sb-trace-ret { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .sb-trace-entry.err .sb-trace-fn { color: var(--red); }
+  .sb-trace-err { color: var(--red); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sb-run-status {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
   /* ── Depth fading ── */
   .graph-col[data-depth="2"] { opacity: 0.85; }
   .graph-col[data-depth="3"] { opacity: 0.7; }
@@ -675,6 +825,7 @@
 <!-- ── Sidebar ── -->
 <div class="sidebar-overlay" id="sb-overlay" onclick="closeSidebar()"></div>
 <div class="sidebar" id="sidebar">
+  <div class="sb-resize-handle" id="sb-resize-handle" title="Drag to resize sidebar"></div>
   <div class="sb-header">
     <span class="sb-title" id="sb-title"></span>
     <button class="sb-close" onclick="closeSidebar()" title="Close">&times;</button>
@@ -685,8 +836,61 @@
     <button class="sb-code-btn" id="sb-copy-btn" onclick="copySidebarSource()">Copy</button>
     <button class="sb-code-btn" id="sb-edit-toggle" onclick="toggleSidebarEdit()">Edit</button>
     <button class="sb-code-btn save-btn" id="sb-save-btn" onclick="saveCurrentEdit()" style="display:none;">Save</button>
+    <button class="sb-code-btn run-btn" id="sb-run-toggle" onclick="toggleSidebarRun()">&#9654; Run</button>
   </div>
   <div class="sb-code-wrap" id="sb-code-wrap"></div>
+  <div class="sb-divider" id="sb-divider" style="display:none;" title="Drag to resize"></div>
+  <div class="sb-run-panel" id="sb-run-panel" style="display:none;">
+    <div class="sb-run-label">Parameters</div>
+    <div id="sb-run-params"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="sb-run-exec-btn" onclick="sbExecRun()">&#9654; Run</button>
+      <button class="sb-run-exec-btn" id="sb-run-repo-btn" onclick="sbExecRunInRepo()" style="border-color:var(--cyan);background:rgba(34,211,238,0.08);color:var(--cyan);">&#128640; Run in repo</button>
+      <button class="sb-run-exec-btn" id="sb-suggest-btn" onclick="sbSuggestValues()" style="border-color:var(--purple);background:rgba(168,85,247,0.1);color:var(--purple);">&#10024; Suggest values</button>
+    </div>
+    <div id="sb-run-chain-info" style="display:none;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-dim);padding:4px 0;"></div>
+    <div id="sb-run-mocks-wrap" style="display:none;">
+      <div class="sb-run-label" style="margin-top:4px;">I/O mocks <span style="font-size:9px;opacity:0.55;text-transform:none;letter-spacing:0;">— external boundaries</span></div>
+      <div id="sb-run-mocks"></div>
+    </div>
+    <div id="sb-run-status" class="sb-run-status" style="display:none;"></div>
+    <div id="sb-run-output"></div>
+    <!-- Test Cases -->
+    <div id="sb-tc-section" style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div class="sb-run-label" style="margin:0;">Test Cases <span id="sb-tc-count" style="font-weight:400;color:var(--text-dim);font-size:10px;"></span></div>
+        <div style="display:flex;gap:4px;">
+          <button id="sb-tc-gen-btn" onclick="sbGenerateTestCases()" style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 7px;border:1px solid var(--purple);background:rgba(168,85,247,0.08);color:var(--purple);border-radius:3px;cursor:pointer;">✨ Generate</button>
+          <button id="sb-tc-save-toggle" onclick="sbToggleTcSaveForm()" style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 7px;border:1px solid rgba(100,116,139,0.4);background:rgba(100,116,139,0.08);color:var(--text-dim);border-radius:3px;cursor:pointer;">💾 Save</button>
+          <button id="sb-tc-run-btn" onclick="sbRunAllTestCases()" style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 7px;border:1px solid var(--cyan);background:rgba(34,211,238,0.08);color:var(--cyan);border-radius:3px;cursor:pointer;">▶ Run all</button>
+        </div>
+      </div>
+      <div id="sb-tc-list" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-dim);font-style:italic;">Loading…</div>
+      <div id="sb-tc-results" style="display:none;margin-top:8px;"></div>
+      <!-- Save single test case form -->
+      <div id="sb-tc-save-form" style="display:none;margin-top:8px;padding:8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:rgba(0,0,0,0.12);">
+        <input id="sb-tc-label" placeholder="Test case name" style="width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;padding:4px 7px;outline:none;margin-bottom:5px;" />
+        <input id="sb-tc-expected" placeholder="Expected output JSON (optional)" style="width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;padding:4px 7px;outline:none;margin-bottom:5px;" />
+        <div style="display:flex;gap:4px;flex-wrap:wrap;">
+          <button onclick="sbCaptureExpected()" style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 7px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-dim);border-radius:3px;cursor:pointer;">↑ Last result</button>
+          <button onclick="sbDoSaveTestCase()" style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 7px;border:1px solid var(--green);background:rgba(34,197,94,0.1);color:var(--green);border-radius:3px;cursor:pointer;">Save</button>
+          <button onclick="sbToggleTcSaveForm()" style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 7px;border:1px solid var(--border);background:transparent;color:var(--text-dim);border-radius:3px;cursor:pointer;">Cancel</button>
+        </div>
+      </div>
+      <!-- Bulk import -->
+      <div style="margin-top:8px;">
+        <button onclick="var el=document.getElementById('sb-tc-bulk-wrap');el.style.display=el.style.display?'':'block';" style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 7px;border:1px solid var(--border);background:transparent;color:var(--text-dim);border-radius:3px;cursor:pointer;">⬇ Bulk import JSON</button>
+        <div id="sb-tc-bulk-wrap" style="display:none;margin-top:6px;">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-dim);margin-bottom:3px;"><code style="color:var(--cyan);">[{"label":"name","args":{...},"expected":...}, ...]</code> — label &amp; expected optional</div>
+          <textarea id="sb-tc-bulk-input" rows="5" placeholder='[&#10;  {"label": "basic", "args": {"x": 1}, "expected": 2},&#10;  {"args": {"x": 0}}&#10;]' style="width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;padding:6px;resize:vertical;outline:none;"></textarea>
+          <div style="display:flex;gap:4px;align-items:center;margin-top:4px;">
+            <button onclick="sbBulkImportTestCases()" style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 9px;border:1px solid var(--blue);background:rgba(59,130,246,0.1);color:var(--blue);border-radius:3px;cursor:pointer;">Import all</button>
+            <span id="sb-tc-bulk-status" style="display:none;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-dim);"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 
@@ -1281,12 +1485,34 @@ function applyEdgeSelection(endpoints) {
 /* ── Sidebar ── */
 var sidebarNodeId = null;
 var sidebarEditing = false;
+var sbAutoCalleeSources = [];   /* auto-fetched callee sources for current node */
+var sbAutoModuleContext = null; /* module-level imports + literal globals for current node */
 
 function openSidebar(id) {
   var nd = resolveNode(id);
   if (!nd) return;
   sidebarNodeId = id;
   sidebarEditing = false;
+  document.getElementById("sb-run-panel").style.display = "none";
+  document.getElementById("sb-run-toggle").classList.remove("active");
+  document.getElementById("sb-divider").style.display = "none";
+  var _cw = document.getElementById("sb-code-wrap");
+  _cw.style.flex = ""; _cw.style.height = ""; delete _cw.dataset.splitSet;
+  document.getElementById("sb-run-params").innerHTML = "";
+  delete document.getElementById("sb-run-params").dataset.builtFor;
+  document.getElementById("sb-run-output").innerHTML = "";
+  document.getElementById("sb-run-mocks").innerHTML = "";
+  document.getElementById("sb-run-mocks-wrap").style.display = "none";
+  document.getElementById("sb-run-chain-info").style.display = "none";
+  document.getElementById("sb-tc-list").innerHTML = "<span style='font-style:italic;color:var(--text-dim);font-size:11px;'>Loading…</span>";
+  document.getElementById("sb-tc-results").style.display = "none";
+  document.getElementById("sb-tc-save-form").style.display = "none";
+  document.getElementById("sb-tc-bulk-wrap").style.display = "none";
+  document.getElementById("sb-tc-count").textContent = "";
+  sbAutoCalleeSources = [];
+  sbAutoModuleContext = null;
+  sbLastRunResult = undefined;
+  sbLoadTestCases(id);
 
   var ni = pn(nd.name);
   var uC = getUpCount(id);
@@ -1318,8 +1544,381 @@ function openSidebar(id) {
 function closeSidebar() {
   document.getElementById("sidebar").classList.remove("open");
   document.getElementById("sb-overlay").classList.remove("open");
+  document.getElementById("sidebar").classList.remove("run-open");
   sidebarNodeId = null;
   sidebarEditing = false;
+  document.getElementById("sb-run-panel").style.display = "none";
+  document.getElementById("sb-run-toggle").classList.remove("active");
+  document.getElementById("sb-divider").style.display = "none";
+  var cw = document.getElementById("sb-code-wrap");
+  cw.style.flex = ""; cw.style.height = ""; delete cw.dataset.splitSet;
+}
+
+/* ── Run panel ── */
+function splitArgs(raw) {
+  var args = [], cur = "", depth = 0, inStr = false, strCh = "";
+  for (var i = 0; i < raw.length; i++) {
+    var c = raw[i];
+    if (inStr) { cur += c; if (c === strCh && raw[i-1] !== "\\") inStr = false; }
+    else if (c === '"' || c === "'") { inStr = true; strCh = c; cur += c; }
+    else if (c === "(" || c === "[" || c === "{") { depth++; cur += c; }
+    else if (c === ")" || c === "]" || c === "}") { depth--; cur += c; }
+    else if (c === "," && depth === 0) { args.push(cur.trim()); cur = ""; }
+    else cur += c;
+  }
+  if (cur.trim()) args.push(cur.trim());
+  return args;
+}
+function sbParseSignature(src) {
+  /* Find the opening paren of the def, then walk bracket-aware to find the matching close. */
+  var defMatch = src.match(/^[\s\S]*?(?:async\s+)?def\s+\w+\s*\(/m);
+  if (!defMatch) return null;
+  var start = defMatch[0].length;
+  var depth = 1, i = start, inStr = false, strCh = "";
+  while (i < src.length && depth > 0) {
+    var c = src[i];
+    if (inStr) { if (c === strCh && src[i-1] !== "\\") inStr = false; }
+    else if (c === '"' || c === "'") { inStr = true; strCh = c; }
+    else if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") depth--;
+    i++;
+  }
+  var raw = src.slice(start, i - 1).trim();
+  if (!raw) return [];
+  return splitArgs(raw).map(function(p) {
+    var stripped   = p.trim().replace(/^\*+/, "").trim();
+    var hasDefault = stripped.indexOf("=") >= 0;
+    var name       = stripped.split(/[=:]/)[0].trim();
+    return { name: name, hasDefault: hasDefault };
+  }).filter(function(p) { return p.name && p.name !== "self" && p.name !== "cls"; });
+}
+
+function toggleSidebarRun() {
+  var panel    = document.getElementById("sb-run-panel");
+  var btn      = document.getElementById("sb-run-toggle");
+  var sidebar  = document.getElementById("sidebar");
+  var divider  = document.getElementById("sb-divider");
+  var codeWrap = document.getElementById("sb-code-wrap");
+  var open     = panel.style.display !== "none";
+  if (open) {
+    panel.style.display = "none";
+    btn.classList.remove("active");
+    sidebar.classList.remove("run-open");
+    divider.style.display = "none";
+    codeWrap.style.flex   = "";
+    codeWrap.style.height = "";
+  } else {
+    panel.style.display = "";
+    btn.classList.add("active");
+    sidebar.classList.add("run-open");
+    divider.style.display = "";
+    if (!codeWrap.dataset.splitSet) {
+      codeWrap.dataset.splitSet = "1";
+      codeWrap.style.flex   = "none";
+      codeWrap.style.height = "280px";
+    }
+    sbBuildRunUI();
+  }
+}
+
+function sbBuildRunUI() {
+  var id = sidebarNodeId;
+  if (!id) return;
+  var paramsEl = document.getElementById("sb-run-params");
+  if (paramsEl.dataset.builtFor === id) return;
+  paramsEl.dataset.builtFor = id;
+
+  var nd     = resolveNode(id);
+  var change = loadChange(id);
+  var src    = (change && change.edited) ? change.edited : (nd && nd.source);
+  var params = src ? sbParseSignature(src) : null;
+
+  if (!params || params.length === 0) {
+    paramsEl.innerHTML = '<div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:var(--text-dim);font-style:italic;">' +
+      (params === null ? "Cannot detect parameters." : "No parameters.") + '</div>';
+  } else {
+    var html = "";
+    params.forEach(function(p) {
+      html += '<div class="sb-run-param-row">' +
+        '<span class="sb-run-param-name" title="' + esc(p.name) + '">' + esc(p.name) + '</span>' +
+        '<input class="sb-run-param-input" data-param="' + esc(p.name) + '" ' +
+          'placeholder="' + (p.hasDefault ? "optional — JSON" : "JSON value") + '" />' +
+      '</div>';
+    });
+    paramsEl.innerHTML = html;
+  }
+  document.getElementById("sb-run-output").innerHTML = "";
+  document.getElementById("sb-run-status").style.display = "none";
+
+  /* Auto-analyze: fetch callee chain + I/O mocks in one call */
+  var chainInfoEl = document.getElementById("sb-run-chain-info");
+  chainInfoEl.textContent = "Loading callee chain\u2026";
+  chainInfoEl.style.display = "";
+
+  fetch("/analyze-asset", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ asset_id: id, repo: repo, branch: branch })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    sbAutoCalleeSources = data.callee_sources || [];
+    sbAutoModuleContext = data.module_context || null;
+    var n = sbAutoCalleeSources.length;
+    var gCount = sbAutoModuleContext ? Object.keys(sbAutoModuleContext.globals || {}).length : 0;
+    var iCount = sbAutoModuleContext ? (sbAutoModuleContext.imports || []).length : 0;
+    var ctxNote = (gCount + iCount) > 0 ? ", " + (gCount + iCount) + " module globals" : "";
+    chainInfoEl.textContent = "\u26d3 " + n + " callee" + (n === 1 ? "" : "s") + " auto-included" + ctxNote;
+
+    if (data.needs_mock && data.needs_mock.length > 0) {
+      data.needs_mock.forEach(function(m) {
+        sbAddMockGlobal(typeof m === "object" ? m.name : m, typeof m === "object" ? m.callable : false);
+      });
+    }
+  })
+  .catch(function() {
+    chainInfoEl.textContent = "Could not load callee chain.";
+  });
+}
+
+function sbGetMockGlobals() {
+  var mocks = {};
+  document.querySelectorAll("#sb-run-mocks .sb-run-param-input").forEach(function(inp) {
+    var raw  = inp.value.trim();
+    var name = inp.dataset.param;
+    if (raw === "" && inp.dataset.callable === "1") return;
+    if (raw === "") { mocks[name] = null; return; }
+    try { mocks[name] = JSON.parse(raw); } catch(_) { mocks[name] = raw; }
+  });
+  return mocks;
+}
+
+function sbAddMockGlobal(name, isCallable) {
+  var mocksEl = document.getElementById("sb-run-mocks");
+  var wrap    = document.getElementById("sb-run-mocks-wrap");
+  if (mocksEl.querySelector('[data-param="' + name + '"]')) return;
+  wrap.style.display = "";
+  var hint = isCallable ? "return value (JSON) — auto-wrapped as fn" : "JSON value (empty = null)";
+  var row = document.createElement("div");
+  row.className = "sb-run-param-row";
+  row.innerHTML =
+    '<span class="sb-run-param-name" title="' + esc(name) + '">' + esc(name) + '</span>' +
+    '<input class="sb-run-param-input" data-param="' + esc(name) + '" placeholder="' + hint + '" />';
+  if (isCallable) row.querySelector("input").dataset.callable = "1";
+  mocksEl.appendChild(row);
+  row.querySelector("input").focus();
+}
+
+function sbSuggestValues() {
+  var id = sidebarNodeId;
+  if (!id) return;
+  var nd     = resolveNode(id);
+  var change = loadChange(id);
+  var src    = (change && change.edited) ? change.edited : (nd && nd.source);
+  if (!src) return;
+
+  var freeNames = [];
+  document.querySelectorAll("#sb-run-mocks .sb-run-param-input").forEach(function(inp) {
+    freeNames.push({ name: inp.dataset.param, callable: inp.dataset.callable === "1" });
+  });
+  var calleeSources = sbAutoCalleeSources;
+
+  var btn = document.getElementById("sb-suggest-btn");
+  var statusEl = document.getElementById("sb-run-status");
+  btn.disabled = true;
+  statusEl.textContent = "Asking Claude for suggestions\u2026";
+  statusEl.style.display = "";
+
+  fetch("/suggest-mocks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source: src, callee_sources: calleeSources, free_names: freeNames })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    btn.disabled = false;
+    statusEl.style.display = "none";
+    if (data.error) { statusEl.textContent = "Suggest failed: " + data.error; statusEl.style.display = ""; return; }
+    if (data.params) Object.keys(data.params).forEach(function(name) {
+      var inp = document.querySelector('#sb-run-params [data-param="' + name + '"]');
+      if (inp) inp.value = JSON.stringify(data.params[name]);
+    });
+    if (data.mocks) Object.keys(data.mocks).forEach(function(name) {
+      var inp = document.querySelector('#sb-run-mocks [data-param="' + name + '"]');
+      if (inp) inp.value = JSON.stringify(data.mocks[name]);
+    });
+  })
+  .catch(function(e) {
+    btn.disabled = false;
+    statusEl.textContent = "Suggest failed: " + String(e);
+    statusEl.style.display = "";
+  });
+}
+
+function sbExecRun() {
+  var id = sidebarNodeId;
+  if (!id) return;
+  var nd     = resolveNode(id);
+  var change = loadChange(id);
+  var source = (change && change.edited) ? change.edited : (nd && nd.source);
+  if (!source) {
+    document.getElementById("sb-run-output").innerHTML =
+      '<div class="sb-run-result"><div class="sb-run-value err">No source available.</div></div>';
+    return;
+  }
+  var args = {}, mocks = sbGetMockGlobals();
+  document.querySelectorAll("#sb-run-params .sb-run-param-input").forEach(function(inp) {
+    var raw = inp.value.trim();
+    if (raw === "") return;
+    try { args[inp.dataset.param] = JSON.parse(raw); }
+    catch(_) { args[inp.dataset.param] = raw; }
+  });
+  var chainSources = sbAutoCalleeSources;
+  var statusEl = document.getElementById("sb-run-status");
+  var outputEl = document.getElementById("sb-run-output");
+  statusEl.textContent = "Running\u2026"; statusEl.style.display = "";
+  outputEl.innerHTML = "";
+  fetch("/run-function", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source: source, args: args, mock_globals: mocks, chain_sources: chainSources, module_context: sbAutoModuleContext })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    statusEl.style.display = "none";
+    if (data.undefined_name) sbAddMockGlobal(data.undefined_name, false);
+    var ok  = data.ok;
+    var val = ok ? JSON.stringify(data.result, null, 2) : data.error;
+    var html = '<div class="sb-run-result">' +
+      '<div class="sb-run-result-row">Return value</div>' +
+      '<div class="sb-run-value' + (ok ? "" : " err") + '">' + esc(val) + '</div>';
+    if (data.stdout) {
+      html += '<div class="sb-run-result-row" style="border-top:1px solid var(--border);">stdout</div>' +
+        '<div class="sb-run-stdout">' + esc(data.stdout) + '</div>';
+    }
+    if (data.trace && data.trace.length) {
+      html += '<div class="sb-run-result-row" style="border-top:1px solid var(--border);">Call trace</div>' +
+        '<div class="sb-run-trace">';
+      data.trace.forEach(function(t) {
+        if (t.ok) {
+          html += '<div class="sb-trace-entry"><span class="sb-trace-fn">' + esc(t.fn) + '</span>' +
+            '<span class="sb-trace-ret">\u2192 ' + esc(t.result) + '</span></div>';
+        } else {
+          html += '<div class="sb-trace-entry err"><span class="sb-trace-fn">\u2717 ' + esc(t.fn) + '</span>' +
+            '<span class="sb-trace-err">' + esc(t.error) + '</span></div>';
+        }
+      });
+      html += '</div>';
+    }
+    if (!ok) {
+      window._sbLastError = data.error || "";
+      html += '<div style="padding:8px 10px;border-top:1px solid var(--border);">' +
+        '<button id="sb-analyse-err-btn" onclick="sbAnalyseError()" style="font-family:\'JetBrains Mono\',monospace;font-size:12px;padding:5px 12px;border:1px solid #f97316;background:rgba(249,115,22,0.08);color:#f97316;border-radius:4px;cursor:pointer;">&#128270; Analyse error &amp; suggest fix</button>' +
+        '</div>';
+    }
+    html += '</div>';
+    outputEl.innerHTML = html;
+  })
+  .catch(function(e) {
+    statusEl.style.display = "none";
+    window._sbLastError = String(e);
+    outputEl.innerHTML = '<div class="sb-run-result"><div class="sb-run-value err">' + esc(String(e)) + '</div>' +
+      '<div style="padding:8px 10px;border-top:1px solid var(--border);">' +
+      '<button id="sb-analyse-err-btn" onclick="sbAnalyseError()" style="font-family:\'JetBrains Mono\',monospace;font-size:12px;padding:5px 12px;border:1px solid #f97316;background:rgba(249,115,22,0.08);color:#f97316;border-radius:4px;cursor:pointer;">&#128270; Analyse error &amp; suggest fix</button>' +
+      '</div></div>';
+  });
+}
+
+function sbExecRunInRepo() {
+  var id = sidebarNodeId;
+  if (!id) return;
+  var nd = resolveNode(id);
+  var change = loadChange(id);
+  var editedSource = (change && change.edited) ? change.edited : null;
+  var args = {};
+  document.querySelectorAll("#sb-run-params .sb-run-param-input").forEach(function(inp) {
+    var raw = inp.value.trim();
+    if (raw === "") return;
+    try { args[inp.dataset.param] = JSON.parse(raw); }
+    catch(_) { args[inp.dataset.param] = raw; }
+  });
+  var statusEl = document.getElementById("sb-run-status");
+  var outputEl = document.getElementById("sb-run-output");
+  var btn = document.getElementById("sb-run-repo-btn");
+  statusEl.textContent = "Running in repo\u2026"; statusEl.style.display = "";
+  outputEl.innerHTML = "";
+  if (btn) { btn.disabled = true; btn.textContent = "\u23F3 Running\u2026"; }
+  fetch("/run-in-repo", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ asset_id: id, repo: repo, branch: branch, args: args, edited_source: editedSource })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    statusEl.style.display = "none";
+    if (btn) { btn.disabled = false; btn.innerHTML = "&#128640; Run in repo"; }
+    var ok  = data.ok;
+    if (ok) sbLastRunResult = data.result;
+    var val = ok ? JSON.stringify(data.result, null, 2) : data.error;
+    var html = '<div class="sb-run-result">' +
+      '<div class="sb-run-result-row" style="color:var(--cyan);">&#128640; Repo result</div>' +
+      '<div class="sb-run-value' + (ok ? "" : " err") + '">' + esc(val) + '</div>';
+    if (data.stdout) {
+      html += '<div class="sb-run-result-row" style="border-top:1px solid var(--border);">stdout</div>' +
+        '<div class="sb-run-stdout">' + esc(data.stdout) + '</div>';
+    }
+    if (data.traceback) {
+      html += '<div class="sb-run-result-row" style="border-top:1px solid var(--border);">traceback</div>' +
+        '<div class="sb-run-stdout" style="color:#f87171;">' + esc(data.traceback) + '</div>';
+    }
+    if (data.setup_log) {
+      html += '<div class="sb-run-result-row" style="border-top:1px solid var(--border);color:var(--text-dim);">setup log</div>' +
+        '<div class="sb-run-stdout" style="opacity:0.6;">' + esc(data.setup_log) + '</div>';
+    }
+    html += '</div>';
+    outputEl.innerHTML = html;
+  })
+  .catch(function(e) {
+    statusEl.style.display = "none";
+    if (btn) { btn.disabled = false; btn.innerHTML = "&#128640; Run in repo"; }
+    outputEl.innerHTML = '<div class="sb-run-result"><div class="sb-run-value err">' + esc(String(e)) + '</div></div>';
+  });
+}
+
+function sbAnalyseError() {
+  var id = sidebarNodeId;
+  if (!id) return;
+  var nd = resolveNode(id);
+  var change = loadChange(id);
+  var source = (change && change.edited) ? change.edited : (nd && nd.source);
+  if (!source || !window._sbLastError) return;
+
+  var calleeSources = sbAutoCalleeSources;
+
+  var btn = document.getElementById("sb-analyse-err-btn");
+  if (btn) { btn.textContent = "Analysing\u2026"; btn.disabled = true; }
+
+  fetch("/suggest-fix", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ source: source, error: window._sbLastError, callee_sources: calleeSources })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (btn) { btn.innerHTML = "&#128270; Analyse error &amp; suggest fix"; btn.disabled = false; }
+    if (data.error) return;
+    if (data.params) Object.keys(data.params).forEach(function(name) {
+      var inp = document.querySelector('#sb-run-params [data-param="' + name + '"]');
+      if (inp) inp.value = JSON.stringify(data.params[name]);
+    });
+    if (data.mocks) Object.keys(data.mocks).forEach(function(name) {
+      var inp = document.querySelector('#sb-run-mocks [data-param="' + name + '"]');
+      if (inp) inp.value = JSON.stringify(data.mocks[name]);
+    });
+  })
+  .catch(function() {
+    if (btn) { btn.innerHTML = "&#128270; Analyse error &amp; suggest fix"; btn.disabled = false; }
+  });
 }
 
 function renderSidebarCode(nd) {
@@ -1595,5 +2194,270 @@ document.addEventListener("keydown", function(e) {
     if (selectedNodeId) { selectedNodeId = null; applySelection(); }
   }
 });
+
+/* ── Test Cases ─────────────────────────────────────────────────────────────── */
+var sbLastRunResult = undefined;
+
+function sbLoadTestCases(id) {
+  var nd = resolveNode(id || sidebarNodeId);
+  if (!nd) return;
+  fetch('/test-cases?repo=' + encodeURIComponent(repo) + '&function_name=' + encodeURIComponent(nd.name))
+    .then(function(r){ return r.json(); })
+    .then(function(cases) {
+      var countEl = document.getElementById('sb-tc-count');
+      var listEl  = document.getElementById('sb-tc-list');
+      countEl.textContent = cases.length ? '(' + cases.length + ')' : '';
+      if (!cases.length) {
+        listEl.innerHTML = '<span style="font-style:italic;color:var(--text-dim);font-size:11px;">No test cases yet.</span>';
+        return;
+      }
+      listEl.innerHTML = cases.map(function(tc) {
+        var expBadge = tc.expected !== null && tc.expected !== undefined
+          ? ' <span style="color:var(--cyan);font-size:10px;">→ ' + esc(JSON.stringify(tc.expected)) + '</span>' : '';
+        return '<div style="display:flex;align-items:flex-start;gap:6px;padding:4px 0;border-bottom:1px solid var(--border);">' +
+          '<div style="flex:1;">' +
+            '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:600;color:var(--text);">' + esc(tc.label) + '</span>' + expBadge +
+            '<div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:var(--text-dim);word-break:break-all;">' + esc(JSON.stringify(tc.args)) + '</div>' +
+          '</div>' +
+          '<button onclick="sbDeleteTestCase(' + tc.id + ')" style="font-family:\'JetBrains Mono\',monospace;font-size:10px;padding:2px 6px;border:1px solid rgba(239,68,68,0.4);background:rgba(239,68,68,0.06);color:#ef4444;border-radius:3px;cursor:pointer;white-space:nowrap;">Del</button>' +
+        '</div>';
+      }).join('');
+    });
+}
+
+function sbDeleteTestCase(id) {
+  fetch('/test-cases/' + id, { method: 'DELETE' })
+    .then(function(){ sbLoadTestCases(); });
+}
+
+function sbToggleTcSaveForm() {
+  var f = document.getElementById('sb-tc-save-form');
+  f.style.display = f.style.display === 'none' ? '' : 'none';
+}
+
+function sbCaptureExpected() {
+  if (sbLastRunResult === undefined) { alert('Run the function in repo first.'); return; }
+  document.getElementById('sb-tc-expected').value = JSON.stringify(sbLastRunResult);
+}
+
+function sbDoSaveTestCase() {
+  var nd = resolveNode(sidebarNodeId);
+  if (!nd) return;
+  var label = document.getElementById('sb-tc-label').value.trim();
+  if (!label) { alert('Enter a test case name.'); return; }
+  var args = {};
+  document.querySelectorAll('#sb-run-params .sb-run-param-input').forEach(function(inp) {
+    var raw = inp.value.trim();
+    if (raw === '') return;
+    try { args[inp.dataset.param] = JSON.parse(raw); } catch(_) { args[inp.dataset.param] = raw; }
+  });
+  var expectedRaw = document.getElementById('sb-tc-expected').value.trim();
+  var expected = null;
+  if (expectedRaw) {
+    try { expected = JSON.parse(expectedRaw); } catch(e) { alert('Expected is not valid JSON: ' + e.message); return; }
+  }
+  fetch('/test-cases', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ repo: repo, function_name: nd.name, label: label, args: args, expected: expectedRaw ? expected : undefined }),
+  })
+  .then(function(r){ return r.json(); })
+  .then(function() {
+    document.getElementById('sb-tc-label').value = '';
+    document.getElementById('sb-tc-expected').value = '';
+    document.getElementById('sb-tc-save-form').style.display = 'none';
+    sbLoadTestCases();
+  });
+}
+
+function sbBulkImportTestCases() {
+  var nd = resolveNode(sidebarNodeId);
+  if (!nd) return;
+  var raw = document.getElementById('sb-tc-bulk-input').value.trim();
+  var cases;
+  try { cases = JSON.parse(raw); } catch(e) { alert('Invalid JSON: ' + e.message); return; }
+  if (!Array.isArray(cases)) { alert('Must be a JSON array.'); return; }
+  var statusEl = document.getElementById('sb-tc-bulk-status');
+  statusEl.textContent = 'Saving ' + cases.length + ' cases…';
+  statusEl.style.display = '';
+  fetch('/test-cases/bulk', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ repo: repo, function_name: nd.name, cases: cases }),
+  })
+  .then(function(r){ return r.json(); })
+  .then(function() {
+    statusEl.style.display = 'none';
+    document.getElementById('sb-tc-bulk-input').value = '';
+    document.getElementById('sb-tc-bulk-wrap').style.display = 'none';
+    sbLoadTestCases();
+  })
+  .catch(function(e){ statusEl.style.display='none'; alert('Import failed: ' + e); });
+}
+
+// ── Sidebar width resize (drag left edge) ────────────────────────────────────
+(function() {
+  var sbar   = document.getElementById('sidebar');
+  var handle = document.getElementById('sb-resize-handle');
+  if (!sbar || !handle) return;
+  var dragging = false, startX, startW;
+  handle.addEventListener('mousedown', function(e) {
+    dragging = true;
+    startX = e.clientX;
+    startW = sbar.offsetWidth;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', function(e) {
+    if (!dragging) return;
+    var delta = startX - e.clientX; // drag left = wider
+    sbar.style.width = Math.max(360, Math.min(window.innerWidth - 40, startW + delta)) + 'px';
+  });
+  window.addEventListener('mouseup', function() {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+})();
+
+// ── Code / Run-panel split drag ───────────────────────────────────────────────
+(function() {
+  var divider  = document.getElementById('sb-divider');
+  var codeWrap = document.getElementById('sb-code-wrap');
+  if (!divider || !codeWrap) return;
+  var dragging = false, startY, startH;
+  divider.addEventListener('mousedown', function(e) {
+    dragging = true;
+    startY = e.clientY;
+    startH = codeWrap.offsetHeight;
+    divider.classList.add('dragging');
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', function(e) {
+    if (!dragging) return;
+    var newH = Math.max(60, Math.min(window.innerHeight - 160, startH + (e.clientY - startY)));
+    codeWrap.style.flex   = 'none';
+    codeWrap.style.height = newH + 'px';
+  });
+  window.addEventListener('mouseup', function() {
+    if (!dragging) return;
+    dragging = false;
+    divider.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+})();
+
+function sbAssertTestCase(id, resultValue, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  fetch('/test-cases/' + id + '/expected', {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ expected: resultValue }),
+  })
+  .then(function(r){ return r.json(); })
+  .then(function() {
+    if (btn) { btn.textContent = '✓ Asserted'; btn.style.opacity = '0.5'; btn.disabled = true; }
+    sbLoadTestCases();
+  })
+  .catch(function(e){ if (btn) { btn.disabled = false; btn.textContent = 'Assert ✓'; } alert('Failed: ' + e); });
+}
+
+function sbGenerateTestCases() {
+  var nd = resolveNode(sidebarNodeId);
+  if (!nd || !nd.source) { alert('No source available for this function.'); return; }
+  var btn = document.getElementById('sb-tc-gen-btn');
+  btn.disabled = true;
+  btn.textContent = '✨ Generating…';
+  fetch('/generate-test-cases', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ source: nd.source }),
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(data) {
+    btn.disabled = false;
+    btn.textContent = '✨ Generate';
+    if (data.error) { alert('AI error: ' + data.error); return; }
+    var wrap = document.getElementById('sb-tc-bulk-wrap');
+    wrap.style.display = 'block';
+    document.getElementById('sb-tc-bulk-input').value = JSON.stringify(data.cases, null, 2);
+  })
+  .catch(function(e){ btn.disabled = false; btn.textContent = '✨ Generate'; alert('Failed: ' + e); });
+}
+
+function sbRunAllTestCases() {
+  var nd = resolveNode(sidebarNodeId);
+  if (!nd) return;
+  var change = loadChange(sidebarNodeId);
+  var editedSource = (change && change.edited) ? change.edited : null;
+  var btn = document.getElementById('sb-tc-run-btn');
+  var resultsEl = document.getElementById('sb-tc-results');
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  resultsEl.style.display = '';
+  resultsEl.innerHTML = '<div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:var(--text-dim);">Running…</div>';
+  fetch('/run-test-cases', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ repo: repo, branch: branch, function_name: nd.name, edited_source: editedSource }),
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(results) {
+    btn.disabled = false;
+    btn.textContent = '▶ Run all';
+    if (!results.length) { resultsEl.innerHTML = '<div style="font-size:11px;font-style:italic;color:var(--text-dim);">No test cases.</div>'; return; }
+    var pass = results.filter(function(r){ return r.passed === true; }).length;
+    var fail = results.filter(function(r){ return r.passed === false; }).length;
+    var editedBadge = editedSource
+      ? '<span style="margin-left:6px;font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(168,85,247,0.12);border:1px solid rgba(168,85,247,0.35);color:var(--purple);">edited</span>'
+      : '';
+    var summary = '<div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;margin-bottom:6px;">' +
+      '<span style="color:var(--green);">✓' + pass + ' passed</span>  ' +
+      '<span style="color:#ef4444;">✗' + fail + ' failed</span>  ' +
+      '<span style="color:var(--text-dim);">' + (results.length - pass - fail) + ' no assertion</span>' +
+      editedBadge + '</div>';
+    var rows = results.map(function(r) {
+      var badge, detail = '';
+      if (!r.ok) {
+        badge = '<span style="color:#f97316;font-weight:600;">ERR</span>';
+        detail = esc((r.error||'').split('\n')[0].slice(0,60));
+      } else if (r.passed === true) {
+        badge = '<span style="color:var(--green);font-weight:600;">PASS</span>';
+        detail = esc(JSON.stringify(r.result));
+      } else if (r.passed === false) {
+        badge = '<span style="color:#ef4444;font-weight:600;">FAIL</span>';
+        detail = 'got ' + esc(JSON.stringify(r.result)) + ' exp ' + esc(JSON.stringify(r.expected));
+      } else {
+        badge = '<span style="color:var(--text-dim);">RAN</span>';
+        detail = esc(JSON.stringify(r.result));
+      }
+      var assertBtn = (r.ok && r.passed === null)
+        ? '<button data-tcid="' + r.id + '" data-result=\'' + JSON.stringify(r.result).replace(/'/g, "&#39;") + '\' onclick="sbAssertTestCase(+this.dataset.tcid, JSON.parse(this.dataset.result), this)" ' +
+          'style="margin-top:2px;font-family:\'JetBrains Mono\',monospace;font-size:10px;padding:1px 6px;border:1px solid rgba(34,197,94,0.5);background:rgba(34,197,94,0.08);color:var(--green);border-radius:3px;cursor:pointer;">Assert ✓</button>'
+        : '';
+      return '<div style="display:flex;gap:6px;padding:3px 0;border-bottom:1px solid var(--border);font-family:\'JetBrains Mono\',monospace;font-size:10px;">' +
+        '<div style="min-width:30px;">' + badge + '</div>' +
+        '<div style="flex:1;overflow:hidden;">' +
+          '<div style="font-weight:600;color:var(--text);">' + esc(r.label) + '</div>' +
+          '<div style="color:var(--text-dim);word-break:break-all;">' + detail + '</div>' +
+          assertBtn +
+        '</div>' +
+      '</div>';
+    }).join('');
+    resultsEl.innerHTML = summary + rows;
+  })
+  .catch(function(e) {
+    btn.disabled = false;
+    btn.textContent = '▶ Run all';
+    resultsEl.innerHTML = '<div style="color:#ef4444;font-size:11px;">' + esc(String(e)) + '</div>';
+  });
+}
 </script>
 {% endblock %}

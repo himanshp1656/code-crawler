@@ -54,6 +54,8 @@ class FileParseResult:
     classes: List[ClassDefInfo] = field(default_factory=list)
     imports: List[ImportInfo] = field(default_factory=list)
     calls: List[CallInfo] = field(default_factory=list)
+    # module_context: top-level imports (as source strings) + literal globals
+    module_context: Dict = field(default_factory=lambda: {"imports": [], "globals": {}})
 
 
 def _module_name_from_path(root: str, file_path: str) -> str:
@@ -209,6 +211,26 @@ def parse_python_file(root: str, file_path: str) -> Optional[FileParseResult]:
     module = _module_name_from_path(root, file_path)
     visitor = _AstVisitor(module=module, path=os.path.relpath(file_path, root), source_text=source)
     visitor.visit(tree)
+
+    # Extract module-level context: import statements + literal assignments
+    mc_imports: List[str] = []
+    mc_globals: Dict = {}
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            mc_imports.append(ast.unparse(node))
+        elif isinstance(node, ast.Assign):
+            if len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                try:
+                    mc_globals[node.targets[0].id] = ast.literal_eval(node.value)
+                except (ValueError, TypeError):
+                    pass
+        elif isinstance(node, ast.AnnAssign):
+            if isinstance(node.target, ast.Name) and node.value is not None:
+                try:
+                    mc_globals[node.target.id] = ast.literal_eval(node.value)
+                except (ValueError, TypeError):
+                    pass
+    visitor.result.module_context = {"imports": mc_imports, "globals": mc_globals}
     return visitor.result
 
 

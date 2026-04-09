@@ -567,6 +567,188 @@
     flex-shrink: 0;
   }
 
+  .nd-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .nd-tab {
+    padding: 6px 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    margin-bottom: -1px;
+  }
+  .nd-tab:hover { color: var(--text); }
+  .nd-tab.active { color: var(--green); border-bottom-color: var(--green); }
+
+  /* ── Run panel ── */
+  .nd-run-panel {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    padding: 14px;
+    gap: 12px;
+  }
+  .nd-run-section-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+  .nd-run-no-params {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    font-style: italic;
+  }
+  .nd-run-param-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .nd-run-param-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--cyan);
+    width: 90px;
+    flex-shrink: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .nd-run-param-input {
+    flex: 1;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 5px 8px;
+    outline: none;
+  }
+  .nd-run-param-input:focus { border-color: var(--blue); }
+  .nd-run-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .nd-run-btn {
+    padding: 6px 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    border: 1px solid var(--green);
+    background: rgba(34,197,94,0.1);
+    color: var(--green);
+    transition: all 0.15s;
+  }
+  .nd-run-btn:hover { background: rgba(34,197,94,0.2); }
+  .nd-run-btn.cmp {
+    border-color: var(--cyan);
+    background: rgba(6,182,212,0.08);
+    color: var(--cyan);
+  }
+  .nd-run-btn.cmp:hover { background: rgba(6,182,212,0.18); }
+  .nd-run-status {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    padding: 4px 0;
+  }
+  .nd-run-result-block {
+    background: rgba(17,24,39,0.5);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+  .nd-run-result-row {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    padding: 4px 10px;
+    border-bottom: 1px solid var(--border);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .nd-run-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--green);
+    padding: 8px 10px;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .nd-run-value.err { color: var(--red); }
+  .nd-run-stdout {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text);
+    padding: 6px 10px;
+    border-top: 1px solid var(--border);
+    white-space: pre-wrap;
+  }
+  .nd-run-trace {
+    padding: 6px 10px 2px;
+    border-top: 1px solid var(--border);
+  }
+  .nd-trace-entry {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 3px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    border-bottom: 1px solid rgba(31,41,55,0.4);
+  }
+  .nd-trace-entry:last-child { border-bottom: none; }
+  .nd-trace-fn { color: var(--cyan); min-width: 140px; flex-shrink: 0; }
+  .nd-trace-ret { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .nd-trace-entry.err .nd-trace-fn { color: var(--red); }
+  .nd-trace-err { color: var(--red); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nd-run-compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .nd-run-cmp-header {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 0 0 4px;
+  }
+  .nd-run-cmp-header.edited { color: var(--green); }
+  .nd-run-chain-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .nd-run-chain-row:hover .nd-run-chain-fname { color: var(--text); }
+  .nd-run-chain-cb { cursor: pointer; accent-color: var(--purple); }
+  .nd-run-chain-fname {
+    font-size: 11px;
+    color: var(--purple);
+    flex-shrink: 0;
+  }
+  .nd-run-chain-file {
+    font-size: 10px;
+    color: var(--text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .nd-source {
     flex: 1;
     overflow: auto;
@@ -703,7 +885,35 @@
         <button class="nd-close" onclick="closeNodePanel()">&#215;</button>
       </div>
       <div id="nd-issues"></div>
+      <div id="nd-tabs" class="nd-tabs" style="display:none;">
+        <button id="nd-tab-diff"   class="nd-tab active" onclick="ndSwitchTab('diff')">Diff</button>
+        <button id="nd-tab-source" class="nd-tab"        onclick="ndSwitchTab('source')">Full source</button>
+        <button id="nd-tab-run"    class="nd-tab"        onclick="ndSwitchTab('run')">&#9654; Run</button>
+      </div>
       <div class="nd-source" id="nd-source"></div>
+      <div class="nd-run-panel" id="nd-run-panel" style="display:none;">
+        <div>
+          <div class="nd-run-section-label">Parameters</div>
+          <div id="nd-run-params"></div>
+        </div>
+        <div class="nd-run-actions">
+          <button class="nd-run-btn" onclick="ndExecRun('single')">&#9654; Run</button>
+          <button class="nd-run-btn cmp" id="nd-run-btn-cmp" onclick="ndExecRun('compare')" style="display:none;">&#8644; Compare original vs edited</button>
+          <button class="nd-run-btn" id="nd-run-repo-btn" onclick="ndExecRunInRepo()" style="border-color:var(--cyan);background:rgba(34,211,238,0.08);color:var(--cyan);">&#128640; Run in repo</button>
+          <button class="nd-run-btn cmp" id="nd-run-repo-cmp-btn" onclick="ndExecRunInRepoCompare()" style="display:none;border-color:var(--cyan);background:rgba(34,211,238,0.05);color:var(--cyan);">&#128640;&#8644; Compare in repo</button>
+          <button class="nd-run-btn" id="nd-suggest-btn" onclick="ndSuggestValues()" style="border-color:var(--purple);background:rgba(168,85,247,0.1);color:var(--purple);">&#10024; Suggest values</button>
+        </div>
+        <div id="nd-run-chain-wrap" style="display:none;">
+          <div class="nd-run-section-label" style="margin-top:4px;">Call chain <span style="font-size:9px;opacity:0.55;text-transform:none;letter-spacing:0;">— include real implementations</span></div>
+          <div id="nd-run-chain"></div>
+        </div>
+        <div id="nd-run-mocks-wrap" style="display:none;">
+          <div class="nd-run-section-label" style="margin-top:4px;">Mock globals <span style="font-size:9px;opacity:0.55;text-transform:none;letter-spacing:0;">— undefined names</span></div>
+          <div id="nd-run-mocks"></div>
+        </div>
+        <div id="nd-run-status" class="nd-run-status" style="display:none;"></div>
+        <div id="nd-run-output"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -2541,6 +2751,19 @@ function openNodePanel(id) {
   var issuesEl  = document.getElementById("nd-issues");
   var sourceEl  = document.getElementById("nd-source");
 
+  /* Track current node and reset run UI for the new node */
+  ndCurrentId = id;
+  document.getElementById("nd-run-params").innerHTML = "";
+  delete document.getElementById("nd-run-params").dataset.builtFor;
+  document.getElementById("nd-run-output").innerHTML = "";
+  document.getElementById("nd-run-status").style.display = "none";
+  document.getElementById("nd-run-mocks").innerHTML = "";
+  document.getElementById("nd-run-mocks-wrap").style.display = "none";
+  document.getElementById("nd-run-chain").innerHTML = "";
+  document.getElementById("nd-run-chain-wrap").style.display = "none";
+  document.getElementById("nd-run-panel").style.display = "none";
+  sourceEl.style.display = "";
+
   var isChanged = !!changes[id];
   var impInfo   = transitiveImpact[id];
 
@@ -2708,37 +2931,539 @@ function openNodePanel(id) {
     '</div>';
   }
 
-  /* ── Render source ── */
-  if (!source) {
-    sourceEl.innerHTML = '<div class="nd-source-empty">Source not available — function was not crawled or source was not stored.</div>';
-  } else {
-    var lines    = source.split("\n");
-    var issueMap = {};
-    issues.forEach(function(iss) { issueMap[iss.idx] = iss; });
+  /* ── Render source / diff ── */
+  var tabsEl = document.getElementById("nd-tabs");
+  if (isChanged) {
+    /* Changed node — build both diff view and full-source view; show tabs */
+    var ch = changes[id];
+    var diffHtml = "";
+    if (ch.original && ch.edited) {
+      var ops = lineDiff(ch.original, ch.edited);
+      ops.forEach(function(op) {
+        if (op.type === "sep") {
+          diffHtml += '<div class="ch-diff-line diff-sep">  ...</div>';
+        } else {
+          var pfx = op.type === "add" ? "+" : op.type === "del" ? "-" : " ";
+          diffHtml += '<div class="ch-diff-line diff-' + op.type + '">' + pfx + " " + escHtml(op.text) + "</div>";
+        }
+      });
+    }
 
-    var html = "";
-    lines.forEach(function(line, i) {
-      var iss    = issueMap[i];
-      var cls    = "nd-line" + (iss ? (iss.warn ? " nd-warn" : " nd-broken") : "");
-      var absLn  = (lineno || 1) + i;
-      html += '<div class="' + cls + '">' +
+    var fullLines = (ch.edited || "").split("\n");
+    var fullHtml  = "";
+    fullLines.forEach(function(line, i) {
+      var absLn = (lineno || 1) + i;
+      fullHtml += '<div class="nd-line">' +
         '<span class="nd-ln">' + absLn + '</span>' +
         '<span class="nd-code">' + highlightPython(line) + '</span>' +
-        (iss && iss.label ? '<span class="nd-break-marker">' + iss.label + '</span>' : '') +
       '</div>';
     });
-    sourceEl.innerHTML = html;
 
-    /* Scroll to first broken line */
-    if (issues.length) {
-      requestAnimationFrame(function() {
-        var firstBroken = sourceEl.querySelector(".nd-broken, .nd-warn");
-        if (firstBroken) firstBroken.scrollIntoView({ block: "center" });
+    tabsEl.style.display = "";
+    document.getElementById("nd-tab-diff").classList.add("active");
+    document.getElementById("nd-tab-source").classList.remove("active");
+    document.getElementById("nd-tab-run").classList.remove("active");
+    document.getElementById("nd-tab-diff").style.display   = "";
+    document.getElementById("nd-tab-source").style.display = "";
+    sourceEl.dataset.diffHtml   = diffHtml || '<div class="nd-source-empty">No changes detected.</div>';
+    sourceEl.dataset.sourceHtml = fullHtml || '<div class="nd-source-empty">Source not available.</div>';
+    sourceEl.innerHTML = sourceEl.dataset.diffHtml;
+  } else {
+    /* Non-changed nodes: show Source + Run tabs */
+    tabsEl.style.display = "";
+    document.getElementById("nd-tab-diff").style.display   = "none";
+    document.getElementById("nd-tab-source").style.display = "";
+    document.getElementById("nd-tab-source").classList.add("active");
+    document.getElementById("nd-tab-run").classList.remove("active");
+  }
+
+  if (!isChanged) {
+    if (!source) {
+      sourceEl.innerHTML = '<div class="nd-source-empty">Source not available — function was not crawled or source was not stored.</div>';
+    } else {
+      var lines    = source.split("\n");
+      var issueMap = {};
+      issues.forEach(function(iss) { issueMap[iss.idx] = iss; });
+
+      var html = "";
+      lines.forEach(function(line, i) {
+        var iss    = issueMap[i];
+        var cls    = "nd-line" + (iss ? (iss.warn ? " nd-warn" : " nd-broken") : "");
+        var absLn  = (lineno || 1) + i;
+        html += '<div class="' + cls + '">' +
+          '<span class="nd-ln">' + absLn + '</span>' +
+          '<span class="nd-code">' + highlightPython(line) + '</span>' +
+          (iss && iss.label ? '<span class="nd-break-marker">' + iss.label + '</span>' : '') +
+        '</div>';
       });
+      sourceEl.innerHTML = html;
+
+      /* Scroll to first broken line */
+      if (issues.length) {
+        requestAnimationFrame(function() {
+          var firstBroken = sourceEl.querySelector(".nd-broken, .nd-warn");
+          if (firstBroken) firstBroken.scrollIntoView({ block: "center" });
+        });
+      }
     }
   }
 
   panel.classList.add("open");
+}
+
+function ndSwitchTab(tab) {
+  var sourceEl = document.getElementById("nd-source");
+  var runEl    = document.getElementById("nd-run-panel");
+  ["diff", "source", "run"].forEach(function(t) {
+    var btn = document.getElementById("nd-tab-" + t);
+    if (btn) btn.classList.toggle("active", t === tab);
+  });
+  if (tab === "run") {
+    sourceEl.style.display = "none";
+    runEl.style.display    = "";
+    ndBuildRunUI();
+  } else {
+    sourceEl.style.display = "";
+    runEl.style.display    = "none";
+    if (tab === "diff")   sourceEl.innerHTML = sourceEl.dataset.diffHtml   || "";
+    if (tab === "source") sourceEl.innerHTML = sourceEl.dataset.sourceHtml || "";
+  }
+}
+
+/* ── Run feature ── */
+var ndCurrentId = null;
+var ndChainSrcMap = {};   /* node id → source, for checked chain items */
+
+function ndBuildRunUI() {
+  var id = ndCurrentId;
+  if (!id) return;
+  var paramsEl = document.getElementById("nd-run-params");
+  if (paramsEl.dataset.builtFor === id) return;   /* already built for this node */
+  paramsEl.dataset.builtFor = id;
+
+  /* Resolve source */
+  var src = null;
+  if (changes[id])         src = changes[id].edited || changes[id].original;
+  else if (nodeCache[id])  src = nodeCache[id].node.source;
+
+  var params = src ? parseSignatureDetailed(src) : null;
+
+  if (!params || params.length === 0) {
+    paramsEl.innerHTML = '<div class="nd-run-no-params">' +
+      (params === null ? "Cannot detect parameters (source unavailable)." : "No parameters.") +
+    '</div>';
+  } else {
+    var html = "";
+    params.forEach(function(p) {
+      html += '<div class="nd-run-param-row">' +
+        '<span class="nd-run-param-name" title="' + esc(p.name) + '">' + esc(p.name) + '</span>' +
+        '<input class="nd-run-param-input" data-param="' + esc(p.name) + '" ' +
+          'placeholder="' + (p.hasDefault ? "optional — JSON value" : "JSON value") + '" />' +
+      '</div>';
+    });
+    paramsEl.innerHTML = html;
+  }
+
+  /* Show compare buttons only for changed nodes */
+  document.getElementById("nd-run-btn-cmp").style.display = changes[id] ? "" : "none";
+  document.getElementById("nd-run-repo-cmp-btn").style.display = changes[id] ? "" : "none";
+
+  /* Clear previous output */
+  document.getElementById("nd-run-output").innerHTML = "";
+  document.getElementById("nd-run-status").style.display = "none";
+
+  /* Pre-analyze source to discover all undefined names upfront */
+  if (src) {
+    fetch("/analyze-function", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: src })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.needs_mock && data.needs_mock.length > 0) {
+        data.needs_mock.forEach(function(m) {
+          ndAddMockGlobal(typeof m === "object" ? m.name : m, typeof m === "object" ? m.callable : false);
+        });
+      }
+    })
+    .catch(function() {});
+  }
+
+  /* Build call-chain section from upstream callees (functions this node calls) */
+  var callees = nodeCache[id] && nodeCache[id].upstream
+    ? nodeCache[id].upstream.filter(function(n) { return n.source; })
+    : [];
+  var chainWrap = document.getElementById("nd-run-chain-wrap");
+  var chainEl   = document.getElementById("nd-run-chain");
+  if (callees.length > 0) {
+    chainWrap.style.display = "";
+    var chainHtml = "";
+    callees.forEach(function(n) {
+      ndChainSrcMap[n.id] = n.source;
+      var parts = n.name.split(".");
+      var fname = parts[parts.length - 1];
+      chainHtml +=
+        '<label class="nd-run-chain-row">' +
+          '<input type="checkbox" class="nd-run-chain-cb" data-chain-id="' + esc(n.id) + '" />' +
+          '<span class="nd-run-chain-fname">' + esc(fname) + '</span>' +
+          '<span class="nd-run-chain-file">' + esc(n.file) + '</span>' +
+        '</label>';
+    });
+    chainEl.innerHTML = chainHtml;
+  } else {
+    chainWrap.style.display = "none";
+  }
+}
+
+function ndSuggestValues() {
+  var id = ndCurrentId;
+  if (!id) return;
+  var src = null;
+  if (changes[id])        src = changes[id].edited || changes[id].original;
+  else if (nodeCache[id]) src = nodeCache[id].node.source;
+  if (!src) return;
+
+  var freeNames = [];
+  document.querySelectorAll("#nd-run-mocks .nd-run-param-input").forEach(function(inp) {
+    freeNames.push({ name: inp.dataset.param, callable: inp.dataset.callable === "1" });
+  });
+  var calleeSources = Object.values(ndChainSrcMap);
+
+  var btn = document.getElementById("nd-suggest-btn");
+  var statusEl = document.getElementById("nd-run-status");
+  btn.disabled = true;
+  statusEl.textContent = "Asking Claude for suggestions\u2026";
+  statusEl.style.display = "";
+
+  fetch("/suggest-mocks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source: src, callee_sources: calleeSources, free_names: freeNames })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    btn.disabled = false;
+    statusEl.style.display = "none";
+    if (data.error) { statusEl.textContent = "Suggest failed: " + data.error; statusEl.style.display = ""; return; }
+    if (data.params) Object.keys(data.params).forEach(function(name) {
+      var inp = document.querySelector('#nd-run-params [data-param="' + name + '"]');
+      if (inp) inp.value = JSON.stringify(data.params[name]);
+    });
+    if (data.mocks) Object.keys(data.mocks).forEach(function(name) {
+      var inp = document.querySelector('#nd-run-mocks [data-param="' + name + '"]');
+      if (inp) inp.value = JSON.stringify(data.mocks[name]);
+    });
+  })
+  .catch(function(e) {
+    btn.disabled = false;
+    statusEl.textContent = "Suggest failed: " + String(e);
+    statusEl.style.display = "";
+  });
+}
+
+function ndGetArgs() {
+  var args = {}, errors = [];
+  document.querySelectorAll("#nd-run-params .nd-run-param-input").forEach(function(inp) {
+    var name = inp.dataset.param;
+    var raw  = inp.value.trim();
+    if (raw === "") return;   /* omit — use default or let Python raise */
+    try {
+      args[name] = JSON.parse(raw);
+    } catch(_) {
+      /* treat bare strings without quotes as string literals */
+      args[name] = raw;
+    }
+  });
+  return { args: args, errors: errors };
+}
+
+function ndGetMockGlobals() {
+  var mocks = {};
+  document.querySelectorAll("#nd-run-mocks .nd-run-param-input").forEach(function(inp) {
+    var raw  = inp.value.trim();
+    var name = inp.dataset.param;
+    /* Skip empty callable mocks — injecting null would cause unpack errors.
+       The backend will surface a NameError so the user knows to fill the field. */
+    if (raw === "" && inp.dataset.callable === "1") return;
+    if (raw === "") { mocks[name] = null; return; }
+    try { mocks[name] = JSON.parse(raw); } catch(_) { mocks[name] = raw; }
+  });
+  return mocks;
+}
+
+function ndAddMockGlobal(name, isCallable) {
+  var mocksEl = document.getElementById("nd-run-mocks");
+  var wrap    = document.getElementById("nd-run-mocks-wrap");
+  if (mocksEl.querySelector('[data-param="' + name + '"]')) return;
+  wrap.style.display = "";
+  var hint = isCallable ? "return value (JSON) — auto-wrapped as fn" : "JSON value (empty = null)";
+  var row = document.createElement("div");
+  row.className = "nd-run-param-row";
+  row.innerHTML =
+    '<span class="nd-run-param-name" title="' + esc(name) + '">' + esc(name) + '</span>' +
+    '<input class="nd-run-param-input" data-param="' + esc(name) + '" placeholder="' + hint + '" />';
+  if (isCallable) row.querySelector("input").dataset.callable = "1";
+  mocksEl.appendChild(row);
+  row.querySelector("input").focus();
+}
+
+function ndExecRun(mode) {
+  var id = ndCurrentId;
+  if (!id) return;
+
+  var parsed   = ndGetArgs();
+  var mocks    = ndGetMockGlobals();
+  var statusEl = document.getElementById("nd-run-status");
+  var outputEl = document.getElementById("nd-run-output");
+
+  var source = null, compareSource = null;
+  if (changes[id]) {
+    source = changes[id].edited;
+    if (mode === "compare") compareSource = changes[id].original;
+  } else if (nodeCache[id]) {
+    source = nodeCache[id].node.source;
+  }
+
+  if (!source) {
+    outputEl.innerHTML = '<div class="nd-run-result-block"><div class="nd-run-value err">No source available for this function.</div></div>';
+    return;
+  }
+
+  statusEl.textContent = "Running\u2026";
+  statusEl.style.display = "";
+  outputEl.innerHTML = "";
+
+  var chainSources = [];
+  document.querySelectorAll("#nd-run-chain .nd-run-chain-cb:checked").forEach(function(cb) {
+    var src = ndChainSrcMap[cb.dataset.chainId];
+    if (src) chainSources.push(src);
+  });
+
+  var body = { source: source, args: parsed.args, mock_globals: mocks, chain_sources: chainSources };
+  if (compareSource) body.compare_source = compareSource;
+
+  fetch("/run-function", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    statusEl.style.display = "none";
+    /* Auto-add input for any newly undefined name */
+    var checkResult = data.mode === "compare" ? (data.original || data.edited) : data;
+    if (checkResult && checkResult.undefined_name) ndAddMockGlobal(checkResult.undefined_name, false);
+    outputEl.innerHTML = data.mode === "compare"
+      ? ndRenderCompare(data.original, data.edited)
+      : ndRenderResult(data);
+  })
+  .catch(function(e) {
+    statusEl.style.display = "none";
+    outputEl.innerHTML = ndRenderResult({ ok: false, error: String(e), stdout: "" });
+  });
+}
+
+function ndRenderResult(data) {
+  var html = '<div class="nd-run-result-block">' +
+    '<div class="nd-run-result-row">Return value</div>' +
+    '<div class="nd-run-value' + (data.ok ? "" : " err") + '">' +
+      esc(data.ok ? JSON.stringify(data.result, null, 2) : data.error) +
+    '</div>';
+  if (data.stdout) {
+    html += '<div class="nd-run-result-row" style="border-top:1px solid var(--border);">stdout</div>' +
+      '<div class="nd-run-stdout">' + esc(data.stdout) + '</div>';
+  }
+  if (data.trace && data.trace.length) {
+    html += '<div class="nd-run-result-row" style="border-top:1px solid var(--border);">Call trace</div>' +
+      '<div class="nd-run-trace">';
+    data.trace.forEach(function(t) {
+      if (t.ok) {
+        html += '<div class="nd-trace-entry"><span class="nd-trace-fn">' + esc(t.fn) + '</span>' +
+          '<span class="nd-trace-ret">\u2192 ' + esc(t.result) + '</span></div>';
+      } else {
+        html += '<div class="nd-trace-entry err"><span class="nd-trace-fn">\u2717 ' + esc(t.fn) + '</span>' +
+          '<span class="nd-trace-err">' + esc(t.error) + '</span></div>';
+      }
+    });
+    html += '</div>';
+  }
+  if (!data.ok) {
+    window._ndLastError = data.error || "";
+    html += '<div style="padding:8px 12px;border-top:1px solid var(--border);">' +
+      '<button id="nd-analyse-err-btn" onclick="ndAnalyseError()" style="font-family:\'JetBrains Mono\',monospace;font-size:12px;padding:5px 12px;border:1px solid #f97316;background:rgba(249,115,22,0.08);color:#f97316;border-radius:4px;cursor:pointer;">&#128270; Analyse error &amp; suggest fix</button>' +
+      '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function ndAnalyseError() {
+  var id = ndCurrentId;
+  if (!id) return;
+  var changes = {};
+  try { changes = JSON.parse(sessionStorage.getItem("code-crawler-changes")) || {}; } catch(e) {}
+  var nd = nodeCache[id];
+  var source = (changes[id] && changes[id].edited) ? changes[id].edited : (nd && nd.source);
+  if (!source || !window._ndLastError) return;
+
+  var calleeSources = [];
+  document.querySelectorAll("#nd-run-chain .nd-run-chain-cb:checked").forEach(function(cb) {
+    var src = ndChainSrcMap[cb.dataset.id];
+    if (src) calleeSources.push(src);
+  });
+
+  var btn = document.getElementById("nd-analyse-err-btn");
+  if (btn) { btn.textContent = "Analysing\u2026"; btn.disabled = true; }
+
+  fetch("/suggest-fix", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ source: source, error: window._ndLastError, callee_sources: calleeSources })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (btn) { btn.innerHTML = "&#128270; Analyse error &amp; suggest fix"; btn.disabled = false; }
+    if (data.error) return;
+    if (data.params) Object.keys(data.params).forEach(function(name) {
+      var inp = document.querySelector('#nd-run-params [data-param="' + name + '"]');
+      if (inp) inp.value = JSON.stringify(data.params[name]);
+    });
+    if (data.mocks) Object.keys(data.mocks).forEach(function(name) {
+      var inp = document.querySelector('#nd-run-mocks [data-param="' + name + '"]');
+      if (inp) inp.value = JSON.stringify(data.mocks[name]);
+    });
+  })
+  .catch(function() {
+    if (btn) { btn.innerHTML = "&#128270; Analyse error &amp; suggest fix"; btn.disabled = false; }
+  });
+}
+
+function ndRenderCompare(orig, edited) {
+  return '<div class="nd-run-compare">' +
+    '<div><div class="nd-run-cmp-header">Original</div>' + ndRenderResult(orig) + '</div>' +
+    '<div><div class="nd-run-cmp-header edited">Edited</div>'   + ndRenderResult(edited) + '</div>' +
+  '</div>';
+}
+
+function ndExecRunInRepoCompare() {
+  var id = ndCurrentId;
+  if (!id || !changes[id]) return;
+
+  var parsed = ndGetArgs();
+  var statusEl = document.getElementById("nd-run-status");
+  var outputEl = document.getElementById("nd-run-output");
+  var btn = document.getElementById("nd-run-repo-cmp-btn");
+
+  statusEl.textContent = "Running both in repo\u2026"; statusEl.style.display = "";
+  outputEl.innerHTML = "";
+  if (btn) { btn.disabled = true; btn.textContent = "\u23F3 Running\u2026"; }
+
+  var baseBody = { asset_id: id, repo: repo, branch: branch, args: parsed.args };
+
+  Promise.all([
+    fetch("/run-in-repo", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(Object.assign({}, baseBody, { edited_source: null }))
+    }).then(function(r) { return r.json(); }),
+    fetch("/run-in-repo", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(Object.assign({}, baseBody, { edited_source: changes[id].edited }))
+    }).then(function(r) { return r.json(); })
+  ])
+  .then(function(results) {
+    statusEl.style.display = "none";
+    if (btn) { btn.disabled = false; btn.innerHTML = "&#128640;&#8644; Compare in repo"; }
+    var orig   = results[0];
+    var edited = results[1];
+    outputEl.innerHTML =
+      '<div class="nd-run-compare">' +
+        '<div>' +
+          '<div class="nd-run-cmp-header">&#128640; Original (repo)</div>' +
+          ndRenderRepoResult(orig) +
+        '</div>' +
+        '<div>' +
+          '<div class="nd-run-cmp-header edited">&#128640; Edited (repo)</div>' +
+          ndRenderRepoResult(edited) +
+        '</div>' +
+      '</div>';
+  })
+  .catch(function(e) {
+    statusEl.style.display = "none";
+    if (btn) { btn.disabled = false; btn.innerHTML = "&#128640;&#8644; Compare in repo"; }
+    outputEl.innerHTML = '<div class="nd-run-result-block"><div class="nd-run-value err">' + esc(String(e)) + '</div></div>';
+  });
+}
+
+function ndRenderRepoResult(data) {
+  var ok  = data.ok;
+  var val = ok ? JSON.stringify(data.result, null, 2) : data.error;
+  var html = '<div class="nd-run-result-block">' +
+    '<div class="nd-run-result-row">Return value</div>' +
+    '<div class="nd-run-value' + (ok ? "" : " err") + '">' + esc(val) + '</div>';
+  if (data.stdout) {
+    html += '<div class="nd-run-result-row" style="border-top:1px solid var(--border);">stdout</div>' +
+      '<div class="nd-run-stdout">' + esc(data.stdout) + '</div>';
+  }
+  if (data.traceback) {
+    html += '<div class="nd-run-result-row" style="border-top:1px solid var(--border);">traceback</div>' +
+      '<div class="nd-run-stdout" style="color:#f87171;">' + esc(data.traceback) + '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function ndExecRunInRepo() {
+  var id = ndCurrentId;
+  if (!id) return;
+
+  // Use edited source if available, else original
+  var editedSource = null;
+  if (changes[id] && changes[id].edited) editedSource = changes[id].edited;
+
+  var parsed = ndGetArgs();
+  var statusEl = document.getElementById("nd-run-status");
+  var outputEl = document.getElementById("nd-run-output");
+  var btn = document.getElementById("nd-run-repo-btn");
+
+  statusEl.textContent = "Running in repo\u2026"; statusEl.style.display = "";
+  outputEl.innerHTML = "";
+  if (btn) { btn.disabled = true; btn.textContent = "\u23F3 Running\u2026"; }
+
+  fetch("/run-in-repo", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ asset_id: id, repo: repo, branch: branch, args: parsed.args, edited_source: editedSource })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    statusEl.style.display = "none";
+    if (btn) { btn.disabled = false; btn.innerHTML = "&#128640; Run in repo"; }
+    var ok  = data.ok;
+    var val = ok ? JSON.stringify(data.result, null, 2) : data.error;
+    var html = '<div class="nd-run-result-block">' +
+      '<div class="nd-run-result-row" style="color:var(--cyan);">&#128640; Repo result</div>' +
+      '<div class="nd-run-value' + (ok ? "" : " err") + '">' + esc(val) + '</div>';
+    if (data.stdout) {
+      html += '<div class="nd-run-result-row" style="border-top:1px solid var(--border);">stdout</div>' +
+        '<div class="nd-run-stdout">' + esc(data.stdout) + '</div>';
+    }
+    if (data.traceback) {
+      html += '<div class="nd-run-result-row" style="border-top:1px solid var(--border);">traceback</div>' +
+        '<div class="nd-run-stdout" style="color:#f87171;">' + esc(data.traceback) + '</div>';
+    }
+    if (data.setup_log) {
+      html += '<div class="nd-run-result-row" style="border-top:1px solid var(--border);color:var(--text-dim);">setup log</div>' +
+        '<div class="nd-run-stdout" style="opacity:0.6;">' + esc(data.setup_log) + '</div>';
+    }
+    html += '</div>';
+    outputEl.innerHTML = html;
+  })
+  .catch(function(e) {
+    statusEl.style.display = "none";
+    if (btn) { btn.disabled = false; btn.innerHTML = "&#128640; Run in repo"; }
+    outputEl.innerHTML = '<div class="nd-run-result-block"><div class="nd-run-value err">' + esc(String(e)) + '</div></div>';
+  });
 }
 
 function closeNodePanel() {

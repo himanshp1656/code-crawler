@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, List
 
-from sqlalchemy import ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import ForeignKey, Index, Integer, PrimaryKeyConstraint, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 class LineageNode(Base):
     __tablename__ = "lineage_nodes"
 
-    asset_id: Mapped[str] = mapped_column(String, primary_key=True)
+    asset_id: Mapped[str] = mapped_column(String, nullable=False)
     tenant_id: Mapped[str] = mapped_column(
         ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
         nullable=False,
@@ -30,6 +30,7 @@ class LineageNode(Base):
     lineno: Mapped[int] = mapped_column(Integer, nullable=False)
     end_lineno: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source: Mapped[str | None] = mapped_column(Text, nullable=True)
+    module_context: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     upstream_ids: Mapped[List[Any]] = mapped_column(
         JSONB,
         nullable=False,
@@ -43,10 +44,6 @@ class LineageNode(Base):
     tenant: Mapped[Tenant] = relationship(back_populates="lineage_nodes")
 
     __table_args__ = (
-        Index(
-            "ix_lineage_nodes_tenant_repo_branch",
-            "tenant_id",
-            "repo",
-            "branch",
-        ),
+        PrimaryKeyConstraint("asset_id", "tenant_id", "repo", "branch", name="pk_lineage_nodes"),
+        Index("ix_lineage_nodes_tenant_repo_branch", "tenant_id", "repo", "branch"),
     )
