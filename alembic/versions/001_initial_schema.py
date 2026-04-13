@@ -84,7 +84,7 @@ def upgrade() -> None:
         sa.Column("file_path", sa.String(), nullable=False),
         sa.Column("lineno", sa.Integer(), nullable=False),
         sa.Column(
-            "upstream_ids",
+            "downstream_ids",
             postgresql.JSONB(),
             server_default=sa.text("'[]'::jsonb"),
             nullable=False,

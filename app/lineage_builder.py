@@ -1,45 +1,59 @@
 import logging
 import os
 import json
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
-from .python_ast_parser import CallInfo, FileParseResult, FunctionDefInfo, ImportInfo, ClassDefInfo
+from .python_ast_parser import CallInfo, ClassDefInfo, FileParseResult, FunctionDefInfo, ImportInfo
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_OUTPUT_DIR = "output"
 
 
-def _build_function_index(
-    files: Dict[str, FileParseResult]
-) -> Dict[str, FunctionDefInfo]:
+# ---------------------------------------------------------------------------
+# Index builders
+# ---------------------------------------------------------------------------
+
+def _build_function_index(files: Dict[str, FileParseResult]) -> Dict[str, FunctionDefInfo]:
     index: Dict[str, FunctionDefInfo] = {}
-    for file_result in files.values():
-        for fn in file_result.functions:
+    for fr in files.values():
+        for fn in fr.functions:
             index[fn.id] = fn
     return index
 
 
-def _build_name_index(
-    files: Dict[str, FileParseResult]
-) -> Dict[str, List[FunctionDefInfo]]:
+def _build_name_index(files: Dict[str, FileParseResult]) -> Dict[str, List[FunctionDefInfo]]:
     name_index: Dict[str, List[FunctionDefInfo]] = {}
-    for file_result in files.values():
-        for fn in file_result.functions:
+    for fr in files.values():
+        for fn in fr.functions:
             name_index.setdefault(fn.name, []).append(fn)
     return name_index
 
 
-def _build_import_maps(
-    files: Dict[str, FileParseResult]
-) -> Dict[str, Dict[str, str]]:
-    """
-    For each file, build a mapping alias -> fully-qualified target.
-    """
+def _build_class_index(files: Dict[str, FileParseResult]) -> Dict[str, ClassDefInfo]:
+    """id → ClassDefInfo"""
+    index: Dict[str, ClassDefInfo] = {}
+    for fr in files.values():
+        for cls in fr.classes:
+            index[cls.id] = cls
+    return index
+
+
+def _build_class_name_index(files: Dict[str, FileParseResult]) -> Dict[str, List[ClassDefInfo]]:
+    """short name → [ClassDefInfo]"""
+    name_index: Dict[str, List[ClassDefInfo]] = {}
+    for fr in files.values():
+        for cls in fr.classes:
+            name_index.setdefault(cls.name, []).append(cls)
+    return name_index
+
+
+def _build_import_maps(files: Dict[str, FileParseResult]) -> Dict[str, Dict[str, str]]:
+    """For each file, build alias → fully-qualified target."""
     import_maps: Dict[str, Dict[str, str]] = {}
-    for path, file_result in files.items():
+    for path, fr in files.items():
         alias_map: Dict[str, str] = {}
-        for imp in file_result.imports:
+        for imp in fr.imports:
             if imp.type == "import":
                 alias = imp.asname or imp.name.split(".")[-1]
                 alias_map[alias] = imp.module or imp.name
@@ -53,26 +67,43 @@ def _build_import_maps(
     return import_maps
 
 
+# ---------------------------------------------------------------------------
+# Resolvers
+# ---------------------------------------------------------------------------
+
 def _resolve_callee(
     call: CallInfo,
     file_result: FileParseResult,
     func_index: Dict[str, FunctionDefInfo],
     name_index: Dict[str, List[FunctionDefInfo]],
     import_maps: Dict[str, Dict[str, str]],
-) -> str | None:
-    """
-    Best-effort resolution from call.func_expr to a function id.
-    """
+) -> Optional[str]:
+    """Best-effort resolution from call.func_expr to a function ID."""
     expr = call.func_expr
     imports_for_file = import_maps.get(file_result.path, {})
 
-    def find_by_module_and_name(module: str, name: str) -> str | None:
+    def find_by_module_and_name(module: str, name: str) -> Optional[str]:
         candidates = [
             fn for fn in func_index.values()
             if fn.file and fn.qualname.startswith(f"{module}.") and fn.name == name
         ]
         if len(candidates) == 1:
             return candidates[0].id
+        return None
+
+    parts = expr.split(".")
+
+    # Case 0: self.method() or cls.method() — resolve within class context
+    if parts[0] in ("self", "cls") and len(parts) >= 2:
+        method_name = parts[1]
+        caller = func_index.get(call.caller_id)
+        if caller and caller.class_id:
+            candidates = [
+                fn for fn in func_index.values()
+                if fn.class_id == caller.class_id and fn.name == method_name
+            ]
+            if len(candidates) == 1:
+                return candidates[0].id
         return None
 
     # Case 1: simple name "foo"
@@ -92,8 +123,7 @@ def _resolve_callee(
 
         # function defined in same file
         same_module_candidates = [
-            fn
-            for fn in func_index.values()
+            fn for fn in func_index.values()
             if fn.file == file_result.path and fn.name == expr
         ]
         if len(same_module_candidates) == 1:
@@ -107,7 +137,6 @@ def _resolve_callee(
         return None
 
     # Case 2: dotted expression "alias.foo" / "pkg.mod.func"
-    parts = expr.split(".")
     head, *rest = parts
 
     # head is import alias?
@@ -136,78 +165,222 @@ def _resolve_callee(
     return None
 
 
+def _resolve_class(
+    target_name: str,
+    file_path: str,
+    import_maps: Dict[str, Dict[str, str]],
+    class_index: Dict[str, ClassDefInfo],
+    class_name_index: Dict[str, List[ClassDefInfo]],
+) -> Optional[str]:
+    """Resolve a raw class name (as written in source) to a class ID."""
+    # Already a known class ID?
+    if target_name in class_index:
+        return target_name
+
+    imports_for_file = import_maps.get(file_path, {})
+
+    if "." not in target_name:
+        # Check import alias
+        if target_name in imports_for_file:
+            target = imports_for_file[target_name]
+            if "." in target:
+                module, name = target.rsplit(".", 1)
+                candidate_id = f"{module}:{name}"
+                if candidate_id in class_index:
+                    return candidate_id
+        # Short name lookup
+        candidates = class_name_index.get(target_name, [])
+        if len(candidates) == 1:
+            return candidates[0].id
+        return None
+
+    # Dotted name e.g. "module.ClassName"
+    parts = target_name.rsplit(".", 1)
+    if len(parts) == 2:
+        module, name = parts
+        # Module might be an import alias
+        if module in imports_for_file:
+            real_module = imports_for_file[module]
+            candidate_id = f"{real_module}:{name}"
+            if candidate_id in class_index:
+                return candidate_id
+        # Direct module:Name
+        candidate_id = f"{module}:{name}"
+        if candidate_id in class_index:
+            return candidate_id
+        # Short name fallback
+        candidates = class_name_index.get(name, [])
+        if len(candidates) == 1:
+            return candidates[0].id
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Main builder
+# ---------------------------------------------------------------------------
+
 def build_lineage(
     files: Dict[str, FileParseResult],
     workflow_id: str,
     run_id: str,
 ) -> List[dict]:
     """
-    Build a function-level lineage graph with each function as a separate JSON object.
+    Build the full lineage graph — functions AND classes — as a flat list of assets.
 
-    Each function (asset) will have:
-        - id: unique ID for the function
-        - name: qualified name (workflow_id/run_id/function_name)
-        - file: file path
-        - lineno: line number
-        - upstream_ids: IDs of functions that call this function (callers)
+    Function assets have:
+        node_type="function", class_id (enclosing class or null),
+        downstream_ids (callers), relationships (instantiates etc.)
+
+    Class assets have:
+        node_type="class", base_class_ids (resolved parent class IDs),
+        downstream_ids=[], relationships=[]
     """
     func_index = _build_function_index(files)
     name_index = _build_name_index(files)
+    class_index = _build_class_index(files)
+    class_name_index = _build_class_name_index(files)
     import_maps = _build_import_maps(files)
 
     assets: Dict[str, dict] = {}
+    downstream_sets: Dict[str, set] = {}
     upstream_sets: Dict[str, set] = {}
-
-    # Build a file_path → FileParseResult lookup for module_context access
     file_results_by_path = {fr.path: fr for fr in files.values()}
 
-    # Create assets for each function
+    # --- Class assets ---
+    for fr in files.values():
+        for cls in fr.classes:
+            imports_for_file = import_maps.get(fr.path, {})
+            base_class_ids: List[str] = []
+            unresolved_bases: List[dict] = []
+
+            for base_name in cls.base_classes:
+                resolved = _resolve_class(
+                    base_name, fr.path, import_maps, class_index, class_name_index
+                )
+                if resolved:
+                    base_class_ids.append(resolved)
+                else:
+                    # Build qualified key using import map for cross-repo resolution
+                    # e.g. "SqlMetadataExtractor" → "application_sdk.templates.SqlMetadataExtractor"
+                    qualified_key = imports_for_file.get(base_name, base_name)
+                    unresolved_bases.append({
+                        "name": base_name,
+                        "qualified_key": qualified_key,
+                    })
+
+            assets[cls.id] = {
+                "id": cls.id,
+                "node_type": "class",
+                "name": cls.qualname,
+                "file": cls.file,
+                "lineno": cls.lineno,
+                "end_lineno": cls.end_lineno,
+                "source": cls.source,
+                "class_id": None,
+                "base_class_ids": sorted(set(base_class_ids)),
+                "unresolved_bases": unresolved_bases,
+                "downstream_ids": [],
+                "upstream_ids": [],
+                "relationships": [],
+                "module_context": fr.module_context,
+            }
+
+    # --- Function assets ---
     for fn in func_index.values():
-        asset_id = fn.id
         fr = file_results_by_path.get(fn.file)
-        assets[asset_id] = {
-            "id": asset_id,
+        assets[fn.id] = {
+            "id": fn.id,
+            "node_type": "function",
             "name": fn.qualname,
             "file": fn.file,
             "lineno": fn.lineno,
             "end_lineno": fn.end_lineno,
             "source": fn.source,
+            "class_id": fn.class_id,
+            "base_class_ids": [],
+            "downstream_ids": [],
             "upstream_ids": [],
+            "relationships": [],
             "module_context": fr.module_context if fr else {"imports": [], "globals": {}},
         }
-        upstream_sets[asset_id] = set()
+        downstream_sets[fn.id] = set()
+        upstream_sets[fn.id] = set()
 
-    # lineage edges
-    # NOTE: The current storage model stores caller IDs in upstream_ids.
-    # This means: upstream_ids of node B = IDs of nodes that CALL B (its callers).
-    # Consequence in the API:
-    #   d.upstream   = callers of this function  (who calls it)
-    #   d.downstream = callees of this function  (what it calls)
-    # Impact analysis (in changes.html) traverses d.upstream to follow callers.
-    # TODO: invert to Atlan's model (upstream = dependencies, downstream = consumers)
-    #       and re-crawl all repos when doing a schema migration.
-    for file_result in files.values():
-        for call in file_result.calls:
+    # --- Call edges (function → function) ---
+    for fr in files.values():
+        for call in fr.calls:
             callee_id = _resolve_callee(
-                call, file_result, func_index, name_index, import_maps
+                call, fr, func_index, name_index, import_maps
             )
             if not callee_id:
                 continue
-
-            caller_asset_id = call.caller_id
-            callee_asset_id = callee_id
-
-            # skip self-references and duplicates
-            if caller_asset_id == callee_asset_id:
+            caller_id = call.caller_id
+            if caller_id == callee_id:
                 continue
-            if callee_asset_id in upstream_sets and caller_asset_id not in upstream_sets[callee_asset_id]:
-                upstream_sets[callee_asset_id].add(caller_asset_id)
+            if callee_id in downstream_sets and caller_id not in downstream_sets[callee_id]:
+                downstream_sets[callee_id].add(caller_id)
+            if caller_id in upstream_sets and callee_id not in upstream_sets[caller_id]:
+                upstream_sets[caller_id].add(callee_id)
 
-    # convert sets to sorted lists
-    for asset_id, ups in upstream_sets.items():
-        assets[asset_id]["upstream_ids"] = sorted(ups)
+    for asset_id, ds in downstream_sets.items():
+        assets[asset_id]["downstream_ids"] = sorted(ds)
+    for asset_id, us in upstream_sets.items():
+        assets[asset_id]["upstream_ids"] = sorted(us)
 
+    # --- Class-level call edges (aggregated from method edges) ---
+    # For each class, upstream_ids = classes whose methods are called by this class's methods
+    # For each class, downstream_ids = classes whose methods call this class's methods
+    # Build func_id → class_id map
+    func_to_class: Dict[str, str] = {}
+    for a in assets.values():
+        if a["node_type"] == "function" and a["class_id"]:
+            func_to_class[a["id"]] = a["class_id"]
+
+    class_upstream: Dict[str, set] = {}
+    class_downstream: Dict[str, set] = {}
+    for a in assets.values():
+        if a["node_type"] != "function" or not a["class_id"]:
+            continue
+        my_class = a["class_id"]
+        # This function calls these (upstream_ids) — map to their classes
+        for callee_id in a["upstream_ids"]:
+            callee_class = func_to_class.get(callee_id)
+            if callee_class and callee_class != my_class:
+                class_upstream.setdefault(my_class, set()).add(callee_class)
+        # These call this function (downstream_ids) — map to their classes
+        for caller_id in a["downstream_ids"]:
+            caller_class = func_to_class.get(caller_id)
+            if caller_class and caller_class != my_class:
+                class_downstream.setdefault(my_class, set()).add(caller_class)
+
+    for class_id, us in class_upstream.items():
+        if class_id in assets:
+            assets[class_id]["upstream_ids"] = sorted(us)
+    for class_id, ds in class_downstream.items():
+        if class_id in assets:
+            assets[class_id]["downstream_ids"] = sorted(ds)
+
+    # --- Instantiates relationships ---
+    for fr in files.values():
+        for rel in fr.relationships:
+            if rel.type != "instantiates":
+                continue
+            if rel.source_id not in assets:
+                continue
+            target_id = _resolve_class(
+                rel.target_name, fr.path, import_maps, class_index, class_name_index
+            )
+            if not target_id:
+                continue
+            entry = {"type": "instantiates", "target_id": target_id}
+            existing = assets[rel.source_id]["relationships"]
+            if entry not in existing:
+                existing.append(entry)
+
+    logger.info(
+        "build_lineage: %d function assets, %d class assets",
+        sum(1 for a in assets.values() if a["node_type"] == "function"),
+        sum(1 for a in assets.values() if a["node_type"] == "class"),
+    )
     return list(assets.values())
-
-
-

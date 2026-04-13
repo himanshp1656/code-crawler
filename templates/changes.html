@@ -822,6 +822,50 @@
     padding: 0 4px;
     line-height: 14px;
   }
+
+  /* ── Diff line numbers ── */
+  .diff-ln {
+    display: inline-block;
+    min-width: 34px;
+    text-align: right;
+    padding-right: 7px;
+    color: rgba(255,255,255,0.18);
+    user-select: none;
+    font-size: 10px;
+    flex-shrink: 0;
+  }
+  .ch-diff-line { display: flex; align-items: baseline; }
+
+  /* ── Test case list in nd-panel ── */
+  .nd-tc-list { display: flex; flex-direction: column; gap: 4px; }
+  .nd-tc-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: rgba(17,24,39,0.3);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
+  .nd-tc-label { flex: 1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nd-tc-status {
+    font-size: 9px; font-weight: 700;
+    padding: 1px 6px; border-radius: 3px; flex-shrink: 0;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .nd-tc-status.pass   { color: var(--green); background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); }
+  .nd-tc-status.fail   { color: var(--red);   background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); }
+  .nd-tc-status.pend   { color: var(--text-dim); background: transparent; border: 1px solid var(--border); }
+  .nd-tc-result {
+    font-size: 10px; color: var(--text-dim);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 110px;
+  }
+  .nd-tests-panel {
+    flex: 1; overflow-y: auto; padding: 14px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
 {% endblock %}
 
 {% block body %}
@@ -889,8 +933,17 @@
         <button id="nd-tab-diff"   class="nd-tab active" onclick="ndSwitchTab('diff')">Diff</button>
         <button id="nd-tab-source" class="nd-tab"        onclick="ndSwitchTab('source')">Full source</button>
         <button id="nd-tab-run"    class="nd-tab"        onclick="ndSwitchTab('run')">&#9654; Run</button>
+        <button id="nd-tab-tests"  class="nd-tab"        onclick="ndSwitchTab('tests')">&#10004; Tests</button>
       </div>
       <div class="nd-source" id="nd-source"></div>
+      <div class="nd-tests-panel" id="nd-tests-panel" style="display:none;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="nd-run-section-label" style="flex:1;margin:0;">Test Cases</span>
+          <button id="nd-tc-run-btn" onclick="ndRunTests()" style="font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 10px;border:1px solid var(--blue);background:rgba(59,130,246,0.1);color:var(--blue);border-radius:4px;cursor:pointer;">&#9654; Run all</button>
+        </div>
+        <div id="nd-tc-list" class="nd-tc-list"></div>
+        <div id="nd-tc-empty" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-dim);font-style:italic;display:none;">No test cases for this function.</div>
+      </div>
       <div class="nd-run-panel" id="nd-run-panel" style="display:none;">
         <div>
           <div class="nd-run-section-label">Parameters</div>
@@ -2075,15 +2128,22 @@ function renderCard(id, change) {
   var ni   = pn(change.name);
   var sev  = analyzeChange(id);
 
-  /* Diff */
+  /* Diff with line numbers */
   var ops = lineDiff(change.original, change.edited);
   var diffHtml = "";
+  var _oLn = change.lineno || 1, _nLn = change.lineno || 1;
   ops.forEach(function(op) {
     if (op.type === "sep") {
-      diffHtml += '<div class="ch-diff-line diff-sep">  ...</div>';
+      diffHtml += '<div class="ch-diff-line diff-sep"><span class="diff-ln"></span>  ...</div>';
+    } else if (op.type === "add") {
+      diffHtml += '<div class="ch-diff-line diff-add"><span class="diff-ln">+' + _nLn + '</span>' + escHtml(op.text) + "</div>";
+      _nLn++;
+    } else if (op.type === "del") {
+      diffHtml += '<div class="ch-diff-line diff-del"><span class="diff-ln">-' + _oLn + '</span>' + escHtml(op.text) + "</div>";
+      _oLn++;
     } else {
-      var pfx = op.type === "add" ? "+" : op.type === "del" ? "-" : " ";
-      diffHtml += '<div class="ch-diff-line diff-' + op.type + '">' + pfx + " " + escHtml(op.text) + "</div>";
+      diffHtml += '<div class="ch-diff-line diff-ctx"><span class="diff-ln"> ' + _nLn + '</span>' + escHtml(op.text) + "</div>";
+      _oLn++; _nLn++;
     }
   });
 
@@ -2422,7 +2482,12 @@ function renderGraph() {
   });
 
   requestAnimationFrame(function() { requestAnimationFrame(drawGraphLines); });
+  setTimeout(function() { drawGraphLines(); }, 300);
 }
+
+document.getElementById("ch-graph-viewport").addEventListener("scroll", function() {
+  requestAnimationFrame(drawGraphLines);
+});
 
 /* ── SVG lines ── */
 function drawGraphLines() {
@@ -2554,10 +2619,20 @@ function renderImpact() {
       var cfn   = cause && changes[cause] ? pn(changes[cause].name).f
                 : cause && nodeCache[cause] ? pn(nodeCache[cause].node.name).f
                 : cause;
+      /* Find the specific call-site line within this affected function */
+      var callLineHtml = "";
+      if (cfn && nodeCache[aid] && nodeCache[aid].node && nodeCache[aid].node.source) {
+        var _callLines = findCallLines(nodeCache[aid].node.source, cfn);
+        if (_callLines.length > 0) {
+          var _absLn = (imp.node.lineno || 1) + _callLines[0];
+          callLineHtml = '<span style="font-size:9px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);border-radius:3px;padding:0 4px;color:#f87171;font-family:\'JetBrains Mono\',monospace;">line ' + _absLn + '</span>';
+        }
+      }
       html += '<div class="ch-impact-item">' +
         '<span style="color:#ef4444;font-weight:600;">' + esc(afn) + '</span>' +
         '<span class="imp-arrow">\u2190 calls</span>' +
         '<span style="color:var(--text-dim);">' + esc(cfn || "?") + '</span>' +
+        callLineHtml +
         '<span class="imp-hop" style="border-color:rgba(239,68,68,0.4);color:#ef4444;">hop ' + imp.hop + '</span>' +
         '<span style="font-size:9px;color:var(--text-dim);">' + esc(imp.node.file + ":" + imp.node.lineno) + '</span>' +
       '</div>';
@@ -2664,10 +2739,20 @@ function renderImpact() {
       var cfn   = cause && changes[cause] ? pn(changes[cause].name).f
                 : cause && nodeCache[cause] ? pn(nodeCache[cause].node.name).f
                 : cause;
+      /* Find the specific call-site line */
+      var callLineHtml = "";
+      if (cfn && nodeCache[aid] && nodeCache[aid].node && nodeCache[aid].node.source) {
+        var _callLines = findCallLines(nodeCache[aid].node.source, cfn);
+        if (_callLines.length > 0) {
+          var _absLn = (imp.node.lineno || 1) + _callLines[0];
+          callLineHtml = '<span style="font-size:9px;background:rgba(249,115,22,0.12);border:1px solid rgba(249,115,22,0.3);border-radius:3px;padding:0 4px;color:#f97316;font-family:\'JetBrains Mono\',monospace;">line ' + _absLn + '</span>';
+        }
+      }
       html += '<div class="ch-impact-item">' +
         '<span style="color:var(--text-dim);">' + esc(cfn || "?") + '</span>' +
         '<span class="imp-arrow">\u2192</span>' +
         '<span style="color:#f97316;opacity:0.9;">' + esc(afn) + '</span>' +
+        callLineHtml +
         '<span class="imp-hop">hop ' + imp.hop + '</span>' +
         '<span style="font-size:9px;color:var(--text-dim);">' + esc(imp.node.file + ":" + imp.node.lineno) + '</span>' +
       '</div>';
@@ -2762,6 +2847,10 @@ function openNodePanel(id) {
   document.getElementById("nd-run-chain").innerHTML = "";
   document.getElementById("nd-run-chain-wrap").style.display = "none";
   document.getElementById("nd-run-panel").style.display = "none";
+  /* Reset tests panel for the new node */
+  ndTestsState = { list: [], results: {} };
+  document.getElementById("nd-tc-list").innerHTML = "";
+  document.getElementById("nd-tc-empty").style.display = "none";
   sourceEl.style.display = "";
 
   var isChanged = !!changes[id];
@@ -3014,17 +3103,19 @@ function openNodePanel(id) {
 function ndSwitchTab(tab) {
   var sourceEl = document.getElementById("nd-source");
   var runEl    = document.getElementById("nd-run-panel");
-  ["diff", "source", "run"].forEach(function(t) {
+  var testsEl  = document.getElementById("nd-tests-panel");
+  ["diff", "source", "run", "tests"].forEach(function(t) {
     var btn = document.getElementById("nd-tab-" + t);
     if (btn) btn.classList.toggle("active", t === tab);
   });
+  sourceEl.style.display = (tab === "run" || tab === "tests") ? "none" : "";
+  runEl.style.display    = tab === "run"   ? "" : "none";
+  testsEl.style.display  = tab === "tests" ? "" : "none";
   if (tab === "run") {
-    sourceEl.style.display = "none";
-    runEl.style.display    = "";
     ndBuildRunUI();
+  } else if (tab === "tests") {
+    ndLoadTests();
   } else {
-    sourceEl.style.display = "";
-    runEl.style.display    = "none";
     if (tab === "diff")   sourceEl.innerHTML = sourceEl.dataset.diffHtml   || "";
     if (tab === "source") sourceEl.innerHTML = sourceEl.dataset.sourceHtml || "";
   }
@@ -3468,6 +3559,95 @@ function ndExecRunInRepo() {
 
 function closeNodePanel() {
   document.getElementById("nd-panel").classList.remove("open");
+}
+
+/* ── Tests tab ── */
+var ndTestsState = { list: [], results: {} };
+
+function ndLoadTests() {
+  var id = ndCurrentId;
+  if (!id) return;
+  var name = (changes[id] ? changes[id].name : null) ||
+             (nodeCache[id] && nodeCache[id].node ? nodeCache[id].node.name : null);
+  var listEl  = document.getElementById("nd-tc-list");
+  var emptyEl = document.getElementById("nd-tc-empty");
+  if (!name) { listEl.innerHTML = ""; emptyEl.style.display = ""; return; }
+  ndTestsState = { list: [], results: {} };
+  listEl.innerHTML = '<div style="color:var(--text-dim);font-size:11px;padding:6px 0;">Loading…</div>';
+  emptyEl.style.display = "none";
+  fetch("/test-cases?" + new URLSearchParams({ repo: repo, function_name: name }))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      ndTestsState.list = Array.isArray(data) ? data : [];
+      ndRenderTestList(ndTestsState.list, ndTestsState.results);
+    })
+    .catch(function() { ndRenderTestList([], {}); });
+}
+
+function ndRunTests() {
+  var id = ndCurrentId;
+  if (!id) return;
+  var name = (changes[id] ? changes[id].name : null) ||
+             (nodeCache[id] && nodeCache[id].node ? nodeCache[id].node.name : null);
+  if (!name) return;
+  var btn = document.getElementById("nd-tc-run-btn");
+  if (btn) { btn.disabled = true; btn.innerHTML = "Running…"; }
+  fetch("/run-test-cases", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repo: repo, branch: branch, function_name: name })
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var results = {};
+      if (Array.isArray(data)) {
+        data.forEach(function(r) { results[r.id] = r; });
+      }
+      ndTestsState.results = results;
+      ndRenderTestList(ndTestsState.list, results);
+    })
+    .catch(function(e) { console.error("run-test-cases error", e); })
+    .finally(function() {
+      if (btn) { btn.disabled = false; btn.innerHTML = "&#9654; Run all"; }
+    });
+}
+
+function ndRenderTestList(list, results) {
+  var listEl  = document.getElementById("nd-tc-list");
+  var emptyEl = document.getElementById("nd-tc-empty");
+  if (!list || list.length === 0) {
+    listEl.innerHTML = "";
+    emptyEl.style.display = "";
+    return;
+  }
+  emptyEl.style.display = "none";
+  var html = "";
+  list.forEach(function(tc) {
+    var res = results[tc.id];
+    var statusHtml = '<span class="nd-tc-status pend">—</span>';
+    var resultHtml = "";
+    if (res) {
+      if (res.passed === null || res.passed === undefined) {
+        statusHtml = '<span class="nd-tc-status pend">RAN</span>';
+      } else {
+        var cls = res.passed ? "pass" : "fail";
+        var lbl = res.passed ? "PASS" : "FAIL";
+        statusHtml = '<span class="nd-tc-status ' + cls + '">' + lbl + '</span>';
+      }
+      if (res.result !== undefined && res.result !== null) {
+        var val = typeof res.result === "object" ? JSON.stringify(res.result) : String(res.result);
+        resultHtml = '<span class="nd-tc-result" title="' + esc(val) + '">' + esc(val) + '</span>';
+      } else if (res.error) {
+        resultHtml = '<span class="nd-tc-result" style="color:var(--red);" title="' + esc(res.error) + '">' + esc(res.error) + '</span>';
+      }
+    }
+    html += '<div class="nd-tc-row">' +
+              '<span class="nd-tc-label" title="' + esc(tc.label) + '">' + esc(tc.label) + '</span>' +
+              statusHtml +
+              resultHtml +
+            '</div>';
+  });
+  listEl.innerHTML = html;
 }
 
 /* ── Resize ── */

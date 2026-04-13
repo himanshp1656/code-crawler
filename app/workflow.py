@@ -31,14 +31,16 @@ class CodeCrawlerWorkflow:
         language: str = "python",
         output_path: Optional[str] = None,
         tenant_id: str = "default",
+        local_path: Optional[str] = None,
     ) -> Dict[str, Any]:
         logger.info(
-            "workflow: starting CodeCrawlerWorkflow for repo=%s branch=%s language=%s",
+            "workflow: starting CodeCrawlerWorkflow for repo=%s branch=%s language=%s local=%s",
             github_repo_url,
             branch,
             language,
+            bool(local_path),
         )
-    
+
         workflow_args: Dict[str, Any] = {
             "github_repo_url": github_repo_url,
             "branch": branch,
@@ -56,15 +58,20 @@ class CodeCrawlerWorkflow:
             maximum_attempts=5,
         )
 
-        # 1. Clone repository
-        logger.info("workflow: step 1 - clone_repo_activity")
-        workflow_args = await workflow.execute_activity(
-            "clone_repo_activity",
-            args=[workflow_args],
-            task_queue=TASK_QUEUE,
-            start_to_close_timeout=timedelta(minutes=5),
-            retry_policy=retry_policy,
-        )
+        if local_path:
+            # Local folder upload — skip clone, use the uploaded path directly
+            logger.info("workflow: skipping clone (local_path=%s)", local_path)
+            workflow_args["repo_path"] = local_path
+        else:
+            # 1. Clone repository
+            logger.info("workflow: step 1 - clone_repo_activity")
+            workflow_args = await workflow.execute_activity(
+                "clone_repo_activity",
+                args=[workflow_args],
+                task_queue=TASK_QUEUE,
+                start_to_close_timeout=timedelta(minutes=5),
+                retry_policy=retry_policy,
+            )
 
         # 2. Parse repository
         logger.info("workflow: step 2 - parse_repo_activity")

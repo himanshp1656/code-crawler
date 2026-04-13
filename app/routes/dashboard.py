@@ -120,12 +120,20 @@ async def get_lineage_data(
     request: Request,
     repo: str,
     branch: str = "main",
+    offset: int = 0,
+    limit: int = 100,
+    search: str = "",
+    filter: str = "connected",
+    sort: str = "connections",
     session: AsyncSession = Depends(get_session),
 ):
     user = await _get_user(request, session)
     safe_repo = normalize_repo_name(repo)
     lineage_repo = LineageRepository(session)
-    return await lineage_repo.fetch_lineage_data(user.tenant_id, safe_repo, branch)
+    return await lineage_repo.fetch_lineage_data(
+        user.tenant_id, safe_repo, branch,
+        offset=offset, limit=limit, search=search, filter=filter, sort=sort,
+    )
 
 
 @router.get("/lineage-node")
@@ -156,7 +164,7 @@ async def lineage_ui(
 ):
     await _get_user(request, session)
     return templates.TemplateResponse(
-        request, "lineage.html", {"repo": repo, "branch": branch}
+        request, "asset.html", {"repo": repo, "branch": branch}
     )
 
 
@@ -170,7 +178,7 @@ async def asset_view(
 ):
     await _get_user(request, session)
     return templates.TemplateResponse(
-        request, "asset.html", {"repo": repo, "branch": branch, "asset_id": asset_id}
+        request, "lineage.html", {"repo": repo, "branch": branch, "asset_id": asset_id}
     )
 
 
@@ -1275,6 +1283,25 @@ async def run_in_repo_endpoint(
     return result
 
 
+# ── Test case helpers ─────────────────────────────────────────────────────────
+
+import math as _math
+
+def _deep_equal(a, b) -> bool:
+    """Deep equality that tolerates float precision and int/float type differences."""
+    if isinstance(a, dict) and isinstance(b, dict):
+        return (set(a.keys()) == set(b.keys()) and
+                all(_deep_equal(a[k], b[k]) for k in a))
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(_deep_equal(x, y) for x, y in zip(a, b))
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        fa, fb = float(a), float(b)
+        if _math.isnan(fa) and _math.isnan(fb):
+            return True
+        return _math.isclose(fa, fb, rel_tol=1e-9, abs_tol=1e-12)
+    return a == b
+
+
 # ── Test cases ────────────────────────────────────────────────────────────────
 
 @router.get("/test-cases")
@@ -1387,12 +1414,34 @@ Format: [{{"label": "descriptive name", "args": {{"param1": value, "param2": val
             )
             resp.raise_for_status()
             text = resp.json()["choices"][0]["message"]["content"].strip()
+        # Strip markdown code fences if present
+        if text.startswith("```"):
+            text = "\n".join(
+                line for line in text.splitlines()
+                if not line.strip().startswith("```")
+            ).strip()
         # Extract the JSON array — find outermost [ ... ]
         start = text.find("[")
         end = text.rfind("]")
         if start == -1 or end == -1 or end < start:
             return {"error": "No JSON array found in response", "cases": []}
-        cases = json.loads(text[start:end + 1])
+        raw = text[start:end + 1]
+        # Fix common Python literals the model may emit
+        import re as _re
+        raw = _re.sub(r'\bNone\b', 'null', raw)
+        raw = _re.sub(r'\bTrue\b', 'true', raw)
+        raw = _re.sub(r'\bFalse\b', 'false', raw)
+        # Remove trailing commas before ] or }
+        raw = _re.sub(r',\s*([\]}])', r'\1', raw)
+        try:
+            cases = json.loads(raw)
+        except Exception:
+            # Fallback: ast.literal_eval handles Python-style output (single quotes, None, True, False)
+            import ast as _ast
+            try:
+                cases = _ast.literal_eval(raw)
+            except Exception as parse_exc:
+                return {"error": str(parse_exc), "cases": []}
         if not isinstance(cases, list):
             return {"error": "Unexpected response format", "cases": []}
         return {"cases": cases}
@@ -1483,7 +1532,7 @@ async def run_test_cases_endpoint(
         passed = None
         if tc.expected is not None:
             if run_result.get("ok"):
-                passed = run_result.get("result") == tc.expected
+                passed = _deep_equal(run_result.get("result"), tc.expected)
             else:
                 passed = False
         return {

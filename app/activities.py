@@ -14,6 +14,7 @@ from .python_ast_parser import (
     FileParseResult,
     FunctionDefInfo,
     ImportInfo,
+    RelationshipInfo,
     parse_repository,
 )
 from .repo_crawler import clone_repository
@@ -60,6 +61,7 @@ async def parse_repo_activity(workflow_args: Dict[str, Any]) -> Dict[str, Any]:
                     "lineno": fn.lineno,
                     "col_offset": fn.col_offset,
                     "class_name": fn.class_name,
+                    "class_id": fn.class_id,
                     "end_lineno": fn.end_lineno,
                     "source": fn.source,
                 }
@@ -67,11 +69,15 @@ async def parse_repo_activity(workflow_args: Dict[str, Any]) -> Dict[str, Any]:
             ],
             "classes": [
                 {
+                    "id": cls.id,
                     "name": cls.name,
                     "qualname": cls.qualname,
                     "file": cls.file,
                     "lineno": cls.lineno,
                     "col_offset": cls.col_offset,
+                    "end_lineno": cls.end_lineno,
+                    "source": cls.source,
+                    "base_classes": cls.base_classes,
                 }
                 for cls in result.classes
             ],
@@ -93,6 +99,17 @@ async def parse_repo_activity(workflow_args: Dict[str, Any]) -> Dict[str, Any]:
                     "col_offset": call.col_offset,
                 }
                 for call in result.calls
+            ],
+            "relationships": [
+                {
+                    "type": rel.type,
+                    "source_id": rel.source_id,
+                    "source_type": rel.source_type,
+                    "target_name": rel.target_name,
+                    "file": rel.file,
+                    "lineno": rel.lineno,
+                }
+                for rel in result.relationships
             ],
         }
 
@@ -139,6 +156,7 @@ async def build_lineage_activity(workflow_args: Dict[str, Any]) -> Dict[str, Any
                 lineno=fn["lineno"],
                 col_offset=fn["col_offset"],
                 class_name=fn.get("class_name"),
+                class_id=fn.get("class_id"),
                 end_lineno=fn.get("end_lineno"),
                 source=fn.get("source"),
             )
@@ -146,11 +164,15 @@ async def build_lineage_activity(workflow_args: Dict[str, Any]) -> Dict[str, Any
         ]
         file_result.classes = [
             ClassDefInfo(
+                id=cls["id"],
                 name=cls["name"],
                 qualname=cls["qualname"],
                 file=cls["file"],
                 lineno=cls["lineno"],
                 col_offset=cls["col_offset"],
+                end_lineno=cls.get("end_lineno"),
+                source=cls.get("source"),
+                base_classes=cls.get("base_classes") or [],
             )
             for cls in data["classes"]
         ]
@@ -173,6 +195,17 @@ async def build_lineage_activity(workflow_args: Dict[str, Any]) -> Dict[str, Any
             )
             for call in data["calls"]
         ]
+        file_result.relationships = [
+            RelationshipInfo(
+                type=rel["type"],
+                source_id=rel["source_id"],
+                source_type=rel["source_type"],
+                target_name=rel["target_name"],
+                file=rel.get("file", ""),
+                lineno=rel.get("lineno", 0),
+            )
+            for rel in data.get("relationships", [])
+        ]
         files[path] = file_result
 
     logger.info(
@@ -191,11 +224,20 @@ async def build_lineage_activity(workflow_args: Dict[str, Any]) -> Dict[str, Any
             tenant_id=tenant_id,
             repo=safe_repo,
             branch=branch,
+            repo_url=repo_url,
             workflow_id=workflow_id,
             run_id=run_id,
             lineage_assets=lineage_assets,
         )
         await session.commit()
+
+    # Run cross-repo base class resolution across all repos in this tenant.
+    # Runs after every crawl so newly crawled repos can resolve previously
+    # unresolved bases in other repos (and vice versa).
+    async with get_session_context() as session:
+        lineage_repo = LineageRepository(session)
+        resolved = await lineage_repo.resolve_cross_repo_bases(tenant_id)
+        logger.info("build_lineage_activity: cross-repo resolved %d base class links", resolved)
 
     logger.info(
         "build_lineage_activity: stored lineage in Postgres (assets=%s repo=%s branch=%s)",
