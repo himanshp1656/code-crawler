@@ -246,6 +246,12 @@ async def build_lineage_activity(workflow_args: Dict[str, Any]) -> Dict[str, Any
         branch,
     )
 
+    try:
+        os.remove(parsed_repo_path)
+        logger.info("build_lineage_activity: deleted temp file %s", parsed_repo_path)
+    except OSError:
+        pass
+
     updated = dict(workflow_args)
     updated["lineage_stats"] = {"assets": inserted}
     return updated

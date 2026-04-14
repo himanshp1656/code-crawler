@@ -39,12 +39,18 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Code Crawler", version="0.2.0", lifespan=lifespan)
 
+ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+]
+# Add production Netlify URL if set
+_frontend_url = os.getenv("FRONTEND_URL")
+if _frontend_url:
+    ALLOWED_ORIGINS.append(_frontend_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:3000",
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
