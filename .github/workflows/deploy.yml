@@ -22,6 +22,7 @@ jobs:
 
             source .venv/bin/activate
             pip install -r requirements.txt --quiet
+            set -a && source .env && set +a
             alembic upgrade head
 
             sudo systemctl restart code-crawler-worker code-crawler-app
