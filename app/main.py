@@ -60,7 +60,8 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("SESSION_SECRET_KEY", "dev-change-me"),
     session_cookie="codecrawler_session",
-    same_site="lax",
+    same_site="none",
+    https_only=True,
 )
 
 include_routers(app)
