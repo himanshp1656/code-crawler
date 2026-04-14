@@ -73,3 +73,27 @@ sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl restart nginx
 
 echo "Nginx configured successfully"
+
+# Temporal UI — password protected
+sudo apt install -y apache2-utils
+echo "Him@211656032" | sudo htpasswd -i -c /etc/nginx/temporal_htpasswd himanshp1656
+
+sudo tee /etc/nginx/sites-available/temporal << 'EOF'
+server {
+    listen 8233;
+    server_name api.jiofibre.in;
+
+    auth_basic "Temporal UI";
+    auth_basic_user_file /etc/nginx/temporal_htpasswd;
+
+    location / {
+        proxy_pass http://127.0.0.1:8233;
+        proxy_set_header Host $host;
+    }
+}
+EOF
+
+sudo ln -sf /etc/nginx/sites-available/temporal /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl restart nginx
+
+echo "Temporal UI configured at http://api.jiofibre.in:8233"
