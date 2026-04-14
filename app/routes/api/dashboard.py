@@ -110,6 +110,36 @@ async def crawl(
     return {"workflow_id": handle.id, "status": "started"}
 
 
+@router.get("/branch-functions")
+async def branch_functions(
+    request: Request,
+    repo: str,
+    branch: str,
+    session: AsyncSession = Depends(get_session),
+):
+    user = await _get_user(request, session)
+    safe_repo = normalize_repo_name(repo)
+    lineage_repo = LineageRepository(session)
+    return await lineage_repo.list_functions_for_branch(user.tenant_id, safe_repo, branch)
+
+
+@router.get("/function-source")
+async def function_source(
+    request: Request,
+    repo: str,
+    branch: str,
+    name: str,
+    session: AsyncSession = Depends(get_session),
+):
+    user = await _get_user(request, session)
+    safe_repo = normalize_repo_name(repo)
+    lineage_repo = LineageRepository(session)
+    node = await lineage_repo.fetch_node_by_name(user.tenant_id, safe_repo, branch, name)
+    if not node:
+        raise HTTPException(status_code=404, detail="Function not found")
+    return node
+
+
 @router.post("/crawl-local")
 async def crawl_local(
     request: Request,
