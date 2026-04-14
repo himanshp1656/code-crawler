@@ -52,3 +52,24 @@ sudo systemctl enable temporal code-crawler-worker code-crawler-app
 sudo systemctl start temporal code-crawler-worker code-crawler-app
 
 echo "All services started successfully"
+
+# Nginx
+sudo tee /etc/nginx/sites-available/code-crawler << 'EOF'
+server {
+    listen 80;
+    server_name _;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+EOF
+
+sudo ln -sf /etc/nginx/sites-available/code-crawler /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl restart nginx
+
+echo "Nginx configured successfully"
