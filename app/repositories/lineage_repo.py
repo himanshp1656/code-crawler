@@ -441,6 +441,27 @@ class LineageRepository:
         await self._s.commit()
         return resolved_count
 
+    async def delete_branch(self, tenant_id: str, repo: str, branch: str) -> int:
+        result = await self._s.execute(
+            delete(LineageNode).where(
+                LineageNode.tenant_id == tenant_id,
+                LineageNode.repo == repo,
+                LineageNode.branch == branch,
+            )
+        )
+        await self._s.flush()
+        return result.rowcount
+
+    async def delete_repo(self, tenant_id: str, repo: str) -> int:
+        result = await self._s.execute(
+            delete(LineageNode).where(
+                LineageNode.tenant_id == tenant_id,
+                LineageNode.repo == repo,
+            )
+        )
+        await self._s.flush()
+        return result.rowcount
+
     async def set_default_branch(self, tenant_id: str, repo: str, branch: str) -> None:
         from sqlalchemy.dialects.postgresql import insert as pg_insert
         stmt = pg_insert(RepoSettings).values(

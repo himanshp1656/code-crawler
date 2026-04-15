@@ -6,9 +6,12 @@ from typing import List
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import delete as sql_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
+from app.models.crawl_job import CrawlJob
+from app.models.repo_settings import RepoSettings
 from app.repositories.lineage_repo import LineageRepository, normalize_repo_name
 from app.repositories.tenant_repo import TenantRepository
 from app.repositories.user_repo import UserRepository
@@ -194,3 +197,61 @@ async def crawl_local(
         workflow_id=handle.id, repo=safe_name, branch=branch, triggered_by=user.username)
     await session.commit()
     return {"workflow_id": handle.id, "status": "started"}
+
+
+@router.delete("/repos/branch")
+async def delete_branch(
+    repo: str,
+    branch: str,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    user = await _get_user(request, session)
+    safe_repo = normalize_repo_name(repo)
+    lineage_repo = LineageRepository(session)
+    deleted = await lineage_repo.delete_branch(user.tenant_id, safe_repo, branch)
+    # Remove crawl job history for this branch
+    await session.execute(
+        sql_delete(CrawlJob).where(
+            CrawlJob.tenant_id == user.tenant_id,
+            CrawlJob.repo == safe_repo,
+            CrawlJob.branch == branch,
+        )
+    )
+    # If no branches remain for this repo, clean up repo_settings too
+    remaining = await lineage_repo.list_branches_for_repo(user.tenant_id, safe_repo)
+    if not remaining:
+        await session.execute(
+            sql_delete(RepoSettings).where(
+                RepoSettings.tenant_id == user.tenant_id,
+                RepoSettings.repo == safe_repo,
+            )
+        )
+    await session.commit()
+    return {"ok": True, "deleted": deleted}
+
+
+@router.delete("/repos")
+async def delete_repo(
+    repo: str,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    user = await _get_user(request, session)
+    safe_repo = normalize_repo_name(repo)
+    lineage_repo = LineageRepository(session)
+    deleted = await lineage_repo.delete_repo(user.tenant_id, safe_repo)
+    await session.execute(
+        sql_delete(CrawlJob).where(
+            CrawlJob.tenant_id == user.tenant_id,
+            CrawlJob.repo == safe_repo,
+        )
+    )
+    await session.execute(
+        sql_delete(RepoSettings).where(
+            RepoSettings.tenant_id == user.tenant_id,
+            RepoSettings.repo == safe_repo,
+        )
+    )
+    await session.commit()
+    return {"ok": True, "deleted": deleted}
