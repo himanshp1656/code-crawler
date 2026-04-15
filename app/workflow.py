@@ -32,6 +32,7 @@ class CodeCrawlerWorkflow:
         output_path: Optional[str] = None,
         tenant_id: str = "default",
         local_path: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         logger.info(
             "workflow: starting CodeCrawlerWorkflow for repo=%s branch=%s language=%s local=%s",
@@ -46,6 +47,7 @@ class CodeCrawlerWorkflow:
             "branch": branch,
             "language": language,
             "tenant_id": tenant_id,
+            "user_id": user_id,
             "workflow_id": workflow.info().workflow_id,
             "run_id": workflow.info().run_id,
         }

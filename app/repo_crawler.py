@@ -19,6 +19,7 @@ def clone_repository(
     repo_url: str,
     branch: str = "main",
     base_dir: Optional[str] = None,
+    auth_url: Optional[str] = None,
 ) -> str:
     """
     Clone (or refresh) a Git repository and return the local path.
@@ -35,16 +36,21 @@ def clone_repository(
     repo_name = _safe_repo_name(repo_url)
     target_dir = os.path.join(base_dir, f"{repo_name}-{branch}")
 
+    # auth_url has PAT injected — used for git ops, never logged
+    clone_url = auth_url or repo_url
+
     try:
         if os.path.isdir(os.path.join(target_dir, ".git")):
             logger.info("Reusing existing clone at %s", target_dir)
             repo = Repo(target_dir)
+            # Update remote URL in case PAT changed
+            repo.remotes.origin.set_url(clone_url)
             repo.remotes.origin.fetch()
             repo.git.checkout(branch)
             repo.git.pull()
         else:
             logger.info("Cloning %s (branch=%s) into %s", repo_url, branch, target_dir)
-            Repo.clone_from(repo_url, target_dir, branch=branch)
+            Repo.clone_from(clone_url, target_dir, branch=branch)
 
         return target_dir
     except Exception:

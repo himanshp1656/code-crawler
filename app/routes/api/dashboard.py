@@ -117,7 +117,7 @@ async def crawl(
     assert client is not None, "Temporal client not initialised"
     handle = await client.start_workflow(
         CodeCrawlerWorkflow.run,
-        args=[body.github_repo_url, body.branch, "python", None, user.tenant_id],
+        args=[body.github_repo_url, body.branch, "python", None, user.tenant_id, None, str(user.id)],
         id=f"code-crawler-{user.tenant_id}-{body.branch}-{body.github_repo_url.rsplit('/', 1)[-1]}",
         task_queue=TASK_QUEUE,
     )
@@ -179,7 +179,7 @@ async def crawl_local(
     assert client is not None, "Temporal client not initialised"
     handle = await client.start_workflow(
         CodeCrawlerWorkflow.run,
-        args=[safe_name, branch, "python", None, user.tenant_id, str(repo_dir.resolve())],
+        args=[safe_name, branch, "python", None, user.tenant_id, str(repo_dir.resolve()), str(user.id)],
         id=f"code-crawler-{user.tenant_id}-{branch}-{safe_name}",
         task_queue=TASK_QUEUE,
     )

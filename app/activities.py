@@ -27,10 +27,30 @@ DEFAULT_OUTPUT_DIR = os.path.join(os.getcwd(), "output")
 
 @activity.defn(name="clone_repo_activity")
 async def clone_repo_activity(workflow_args: Dict[str, Any]) -> Dict[str, Any]:
+    from urllib.parse import urlparse, urlunparse
+    from .crypto import decrypt_pat
+    from .models.user import User
+
     repo_url = workflow_args["github_repo_url"]
     branch = workflow_args.get("branch", "main")
     logger.info("clone_repo_activity: cloning repo=%s branch=%s", repo_url, branch)
-    repo_path = clone_repository(repo_url=repo_url, branch=branch)
+
+    # Fetch PAT for the triggering user — inject into URL without logging it
+    auth_url = repo_url
+    user_id = workflow_args.get("user_id")
+    if user_id:
+        try:
+            async with get_session_context() as session:
+                user = await session.get(User, int(user_id))
+                if user and user.github_pat_encrypted:
+                    pat = decrypt_pat(user.github_pat_encrypted)
+                    parsed = urlparse(repo_url)
+                    auth_url = urlunparse(parsed._replace(netloc=f"{pat}@{parsed.netloc}"))
+                    logger.info("clone_repo_activity: using PAT for user_id=%s", user_id)
+        except Exception:
+            logger.warning("clone_repo_activity: failed to fetch PAT for user_id=%s, proceeding without", user_id)
+
+    repo_path = clone_repository(repo_url=repo_url, auth_url=auth_url, branch=branch)
     logger.info("clone_repo_activity: cloned to repo_path=%s", repo_path)
     updated = dict(workflow_args)
     updated["repo_path"] = repo_path
