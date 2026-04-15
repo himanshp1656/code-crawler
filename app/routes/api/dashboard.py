@@ -89,12 +89,16 @@ async def class_lineage_data(
     request: Request,
     repo: str,
     branch: str = "main",
+    offset: int = 0,
+    limit: int = 100,
+    search: str = "",
     session: AsyncSession = Depends(get_session),
 ):
     user = await _get_user(request, session)
     lineage_repo = LineageRepository(session)
     return await lineage_repo.fetch_class_lineage_data(
-        user.tenant_id, normalize_repo_name(repo), branch
+        user.tenant_id, normalize_repo_name(repo), branch,
+        offset=offset, limit=limit, search=search,
     )
 
 

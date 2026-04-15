@@ -123,30 +123,48 @@ class LineageRepository:
     # ── Class lineage ──────────────────────────────────────────────────────
 
     async def fetch_class_lineage_data(
-        self, tenant_id: str, repo: str, branch: str
+        self,
+        tenant_id: str,
+        repo: str,
+        branch: str,
+        *,
+        offset: int = 0,
+        limit: int = 100,
+        search: str = "",
     ) -> Dict[str, Any]:
         _join = FunctionBranch.def_id == FunctionDef.id
+        base_where = [
+            FunctionBranch.tenant_id == tenant_id,
+            FunctionBranch.repo == repo,
+            FunctionBranch.branch == branch,
+            FunctionDef.node_type == "class",
+        ]
 
-        # 1. All class nodes
-        class_result = await self._s.execute(
+        # 1. Paginated class nodes with window function for total
+        q = (
             select(
                 FunctionBranch.asset_id,
                 FunctionDef.name,
                 FunctionDef.file_path,
                 FunctionDef.lineno,
                 FunctionBranch.base_class_ids,
+                func.count().over().label("_filtered_total"),
             )
             .join(FunctionDef, _join)
-            .where(
-                FunctionBranch.tenant_id == tenant_id,
-                FunctionBranch.repo == repo,
-                FunctionBranch.branch == branch,
-                FunctionDef.node_type == "class",
-            )
+            .where(*base_where)
             .order_by(FunctionDef.name)
         )
+        if search:
+            pattern = f"%{search}%"
+            q = q.where(or_(FunctionDef.name.ilike(pattern), FunctionDef.file_path.ilike(pattern)))
+        q = q.offset(offset).limit(limit)
+
+        class_result = await self._s.execute(q)
+        rows = class_result.all()
+        filtered_total = rows[0]._filtered_total if rows else 0
+
         classes: Dict[str, Dict] = {}
-        for r in class_result.all():
+        for r in rows:
             classes[r.asset_id] = {
                 "id": r.asset_id,
                 "name": r.name,
@@ -156,7 +174,10 @@ class LineageRepository:
                 "method_count": 0,
             }
 
-        # 2. Method counts per class
+        if not classes:
+            return {"nodes": [], "edges": [], "filtered_total": 0, "offset": offset, "limit": limit}
+
+        # 2. Method counts for the returned classes only
         count_result = await self._s.execute(
             select(FunctionDef.class_id, func.count(FunctionBranch.asset_id))
             .join(FunctionDef, _join)
@@ -165,7 +186,7 @@ class LineageRepository:
                 FunctionBranch.repo == repo,
                 FunctionBranch.branch == branch,
                 FunctionDef.node_type == "function",
-                FunctionDef.class_id.isnot(None),
+                FunctionDef.class_id.in_(list(classes.keys())),
             )
             .group_by(FunctionDef.class_id)
         )
@@ -173,39 +194,7 @@ class LineageRepository:
             if class_id in classes:
                 classes[class_id]["method_count"] = count
 
-        # 3. Compute class→class call edges from function downstream_ids
-        func_result = await self._s.execute(
-            select(FunctionBranch.asset_id, FunctionDef.class_id, FunctionBranch.downstream_ids)
-            .join(FunctionDef, _join)
-            .where(
-                FunctionBranch.tenant_id == tenant_id,
-                FunctionBranch.repo == repo,
-                FunctionBranch.branch == branch,
-                FunctionDef.node_type == "function",
-            )
-        )
-        func_class_map: Dict[str, Optional[str]] = {}
-        all_funcs = func_result.all()
-        for r in all_funcs:
-            func_class_map[r.asset_id] = r.class_id
-
-        edge_counts: Dict[tuple, int] = {}
-        for r in all_funcs:
-            callee_class = r.class_id
-            if not callee_class or callee_class not in classes:
-                continue
-            for caller_id in (r.downstream_ids or []):
-                caller_class = func_class_map.get(caller_id)
-                if caller_class and caller_class != callee_class and caller_class in classes:
-                    key = (caller_class, callee_class)
-                    edge_counts[key] = edge_counts.get(key, 0) + 1
-
-        call_edges = [
-            {"source": src, "target": tgt, "call_count": count, "edge_type": "calls"}
-            for (src, tgt), count in edge_counts.items()
-        ]
-
-        # 4. Cross-repo parent classes
+        # 3. Cross-repo parent classes
         cross_repo_ids = set()
         for cls in classes.values():
             for parent_id in (cls["base_class_ids"] or []):
@@ -245,18 +234,20 @@ class LineageRepository:
                     "branch": r.branch,
                 }
 
-        # 5. Inheritance edges
+        # 4. Inheritance edges between returned nodes (including cross-repo parents)
         inherit_edges = []
-        for cls in classes.values():
+        for cls in list(classes.values()):
             for parent_id in (cls["base_class_ids"] or []):
                 if parent_id in classes:
-                    inherit_edges.append({
-                        "source": cls["id"],
-                        "target": parent_id,
-                        "edge_type": "extends",
-                    })
+                    inherit_edges.append({"source": cls["id"], "target": parent_id, "edge_type": "extends"})
 
-        return {"nodes": list(classes.values()), "edges": call_edges + inherit_edges}
+        return {
+            "nodes": list(classes.values()),
+            "edges": inherit_edges,
+            "filtered_total": filtered_total,
+            "offset": offset,
+            "limit": limit,
+        }
 
     # ── Simple lookups ─────────────────────────────────────────────────────
 
