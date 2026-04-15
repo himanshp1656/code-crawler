@@ -491,16 +491,15 @@ class LineageRepository:
             LineageNode.branch == branch,
         ]
 
-        # --- Stats (one lightweight count query) ---
+        up_len = func.jsonb_array_length(LineageNode.upstream_ids)
+        down_len = func.jsonb_array_length(LineageNode.downstream_ids)
+        is_connected = or_(down_len > 0, up_len > 0)
+
+        # --- Single stats query covering total + connected counts ---
         stats_result = await self._s.execute(
             select(
                 func.count().label("total"),
-                func.count().filter(
-                    or_(
-                        func.jsonb_array_length(LineageNode.downstream_ids) > 0,
-                        func.jsonb_array_length(LineageNode.upstream_ids) > 0,
-                    )
-                ).label("connected"),
+                func.count().filter(is_connected).label("connected"),
             ).where(*base_where)
         )
         stats_row = stats_result.one()
@@ -508,10 +507,8 @@ class LineageRepository:
         connected = stats_row.connected
         isolated = total - connected
 
-        # --- Filtered + paginated query ---
-        up_len = func.jsonb_array_length(LineageNode.upstream_ids)
-        down_len = func.jsonb_array_length(LineageNode.downstream_ids)
-
+        # --- Filtered + paginated query with inline count via window function ---
+        # Using COUNT(*) OVER() avoids a separate count round-trip to the DB.
         q = select(
             LineageNode.asset_id,
             LineageNode.node_type,
@@ -521,6 +518,7 @@ class LineageRepository:
             LineageNode.class_id,
             down_len.label("downstream_count"),
             up_len.label("upstream_count"),
+            func.count().over().label("_filtered_total"),
         ).where(*base_where)
 
         # Search
@@ -535,7 +533,7 @@ class LineageRepository:
 
         # Filter
         if filter == "connected":
-            q = q.where(or_(down_len > 0, up_len > 0))
+            q = q.where(is_connected)
         elif filter == "upstream":
             q = q.where(up_len > 0)
         elif filter == "downstream":
@@ -549,13 +547,11 @@ class LineageRepository:
         else:
             q = q.order_by(LineageNode.name)
 
-        # Count filtered total (before pagination)
-        count_q = select(func.count()).select_from(q.subquery())
-        filtered_total = (await self._s.execute(count_q)).scalar() or 0
-
-        # Paginate
+        # Paginate — window function computes filtered_total before LIMIT is applied
         q = q.offset(offset).limit(limit)
         result = await self._s.execute(q)
+        rows = result.all()
+        filtered_total = rows[0]._filtered_total if rows else 0
 
         nodes = [
             {
@@ -568,7 +564,7 @@ class LineageRepository:
                 "upstream_count": row.upstream_count,
                 "downstream_count": row.downstream_count,
             }
-            for row in result.all()
+            for row in rows
         ]
 
         return {
@@ -639,21 +635,22 @@ class LineageRepository:
             LineageNode.upstream_ids,
         ]
 
-        # For function nodes: fetch callers (downstream_ids) and callees (upstream_ids)
+        # For function nodes: fetch callers (downstream_ids) + callees (upstream_ids) in one query
         callers: List[Dict[str, Any]] = []
         callees: List[Dict[str, Any]] = []
         if node["node_type"] != "class":
-            if node["downstream_ids"]:
-                up_result = await self._s.execute(
+            all_fn_neighbor_ids = set(node["downstream_ids"]) | set(node["upstream_ids"])
+            if all_fn_neighbor_ids:
+                fn_neighbor_result = await self._s.execute(
                     select(*_neighbor_cols).where(
                         LineageNode.tenant_id == tenant_id,
                         LineageNode.repo == repo,
                         LineageNode.branch == branch,
-                        LineageNode.asset_id.in_(node["downstream_ids"]),
+                        LineageNode.asset_id.in_(all_fn_neighbor_ids),
                     )
                 )
-                callers = [
-                    {
+                fn_neighbor_map = {
+                    r.asset_id: {
                         "id": r.asset_id,
                         "node_type": r.node_type,
                         "name": r.name,
@@ -665,33 +662,10 @@ class LineageRepository:
                         "downstream_count": len(r.downstream_ids or []),
                         "upstream_count": len(r.upstream_ids or []),
                     }
-                    for r in up_result.all()
-                ]
-
-            if node.get("upstream_ids"):
-                callee_result = await self._s.execute(
-                    select(*_neighbor_cols).where(
-                        LineageNode.tenant_id == tenant_id,
-                        LineageNode.repo == repo,
-                        LineageNode.branch == branch,
-                        LineageNode.asset_id.in_(node["upstream_ids"]),
-                    )
-                )
-                callees = [
-                    {
-                        "id": r.asset_id,
-                        "node_type": r.node_type,
-                        "name": r.name,
-                        "file": r.file_path,
-                        "lineno": r.lineno,
-                        "end_lineno": r.end_lineno,
-                        "source": r.source,
-                        "class_id": r.class_id,
-                        "downstream_count": len(r.downstream_ids or []),
-                        "upstream_count": len(r.upstream_ids or []),
-                    }
-                    for r in callee_result.all()
-                ]
+                    for r in fn_neighbor_result.all()
+                }
+                callers = [fn_neighbor_map[i] for i in node["downstream_ids"] if i in fn_neighbor_map]
+                callees = [fn_neighbor_map[i] for i in node["upstream_ids"] if i in fn_neighbor_map]
 
         # For class nodes, fetch methods and use pre-computed class-level edges.
         methods: List[Dict[str, Any]] = []
