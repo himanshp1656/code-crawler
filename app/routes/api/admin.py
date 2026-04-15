@@ -79,7 +79,7 @@ async def list_tenants(request: Request, session: AsyncSession = Depends(get_ses
             "display_name": t.tenant_name,
             "account_type": t.account_type,
             "users": [
-                {"username": u.username, "is_active": u.is_active}
+                {"id": u.id, "username": u.username, "is_active": u.is_active}
                 for u in users
             ],
         })
@@ -95,6 +95,38 @@ async def create_tenant(
     await _require_admin(request, session)
     tenant_repo = TenantRepository(session)
     await tenant_repo.create(body.tenant_id, body.tenant_name)
+    await session.commit()
+    return {"ok": True}
+
+
+@router.delete("/tenants/{tenant_id}")
+async def delete_tenant(
+    tenant_id: str,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    await _require_admin(request, session)
+    tenant_repo = TenantRepository(session)
+    tenant = await tenant_repo.get_by_id(tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    await session.delete(tenant)
+    await session.commit()
+    return {"ok": True}
+
+
+@router.delete("/users/{user_id}")
+async def delete_user(
+    user_id: int,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    await _require_admin(request, session)
+    user_repo = UserRepository(session)
+    user = await user_repo.get_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    await session.delete(user)
     await session.commit()
     return {"ok": True}
 
