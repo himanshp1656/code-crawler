@@ -76,7 +76,7 @@ async def list_tenants(request: Request, session: AsyncSession = Depends(get_ses
         users = await user_repo.list_for_tenant(t.tenant_id)
         result.append({
             "tenant_id": t.tenant_id,
-            "display_name": t.display_name,
+            "display_name": t.tenant_name,
             "account_type": t.account_type,
             "users": [
                 {"username": u.username, "is_active": u.is_active}
