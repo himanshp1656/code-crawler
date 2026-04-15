@@ -440,6 +440,13 @@ class LineageRepository:
 
             for unresolved in unresolved_bases:
                 qualified_key = unresolved.get("qualified_key", unresolved.get("name", ""))
+
+                # Bare names (no module path) are ambiguous — "Config", "Base", "Model"
+                # could refer to anything. Skip cross-repo resolution for them.
+                if "." not in qualified_key:
+                    remaining_unresolved.append(unresolved)
+                    continue
+
                 matches = []
 
                 for cand in all_candidates:
@@ -451,7 +458,14 @@ class LineageRepository:
                         continue
                     cand_class_name = cand_asset_id.split(":")[-1]
                     for key in _candidate_keys(cand_file_path, cand_class_name):
-                        if qualified_key.endswith(key) or key.endswith(qualified_key):
+                        # Require match on a full dotted segment boundary so that
+                        # "Config" doesn't match "DatabaseConfig.Config" via suffix.
+                        exact = qualified_key == key
+                        suffix = (
+                            key.endswith("." + qualified_key) or
+                            qualified_key.endswith("." + key)
+                        )
+                        if exact or suffix:
                             matches.append({
                                 "asset_id": cand_asset_id,
                                 "repo": cand_repo,
