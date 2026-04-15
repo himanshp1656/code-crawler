@@ -304,6 +304,12 @@ class _AstVisitor(ast.NodeVisitor):
                 cur = cur.value
             if isinstance(cur, ast.Name):
                 parts.append(cur.id)
+            elif isinstance(cur, ast.Call):
+                # Handle super().method() — emit "super().attr" so the resolver
+                # can look up the method in parent classes.
+                func = cur.func
+                if isinstance(func, ast.Name) and func.id == "super":
+                    parts.append("super()")
             parts.reverse()
             return ".".join(parts)
         return ast.unparse(node) if hasattr(ast, "unparse") else type(node).__name__

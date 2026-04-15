@@ -67,6 +67,25 @@ def _build_import_maps(files: Dict[str, FileParseResult]) -> Dict[str, Dict[str,
     return import_maps
 
 
+def _build_star_imports(files: Dict[str, FileParseResult]) -> Dict[str, List[str]]:
+    """Returns {file_path: [module, ...]} for files that have 'from module import *'."""
+    result: Dict[str, List[str]] = {}
+    for path, fr in files.items():
+        for imp in fr.imports:
+            if imp.name == "*" and imp.module:
+                result.setdefault(path, []).append(imp.module)
+    return result
+
+
+def _build_method_index(func_index: Dict[str, FunctionDefInfo]) -> Dict[str, Dict[str, List[str]]]:
+    """Returns {class_id: {method_name: [func_id, ...]}} for O(1) method lookup."""
+    idx: Dict[str, Dict[str, List[str]]] = {}
+    for fn in func_index.values():
+        if fn.class_id:
+            idx.setdefault(fn.class_id, {}).setdefault(fn.name, []).append(fn.id)
+    return idx
+
+
 # ---------------------------------------------------------------------------
 # Resolvers
 # ---------------------------------------------------------------------------
@@ -77,6 +96,10 @@ def _resolve_callee(
     func_index: Dict[str, FunctionDefInfo],
     name_index: Dict[str, List[FunctionDefInfo]],
     import_maps: Dict[str, Dict[str, str]],
+    class_index: Dict[str, "ClassDefInfo"],
+    class_name_index: Dict[str, List["ClassDefInfo"]],
+    star_imports: Dict[str, List[str]],
+    method_index: Dict[str, Dict[str, List[str]]],
 ) -> Optional[str]:
     """Best-effort resolution from call.func_expr to a function ID."""
     expr = call.func_expr
@@ -91,24 +114,78 @@ def _resolve_callee(
             return candidates[0].id
         return None
 
+    def resolve_method_in_hierarchy(start_class_id: str, method_name: str) -> Optional[str]:
+        """BFS through the inheritance chain (including cross-repo bases) to find a method."""
+        queue = [start_class_id]
+        visited: set = set()
+        while queue:
+            cid = queue.pop(0)
+            if cid in visited:
+                continue
+            visited.add(cid)
+            ids = method_index.get(cid, {}).get(method_name, [])
+            if len(ids) == 1:
+                return ids[0]
+            cls_info = class_index.get(cid)
+            if cls_info:
+                for base_name in cls_info.base_classes:
+                    parent_id = _resolve_class(
+                        base_name, file_result.path, import_maps,
+                        class_index, class_name_index,
+                    )
+                    if parent_id and parent_id not in visited:
+                        queue.append(parent_id)
+        return None
+
     parts = expr.split(".")
 
-    # Case 0: self.method() or cls.method() — resolve within class context
-    if parts[0] in ("self", "cls") and len(parts) >= 2:
+    # ── Case 0: self.method() / cls.method() — walk full inheritance chain ──
+    if parts[0] in ("self", "cls") and len(parts) == 2:
         method_name = parts[1]
         caller = func_index.get(call.caller_id)
         if caller and caller.class_id:
-            candidates = [
-                fn for fn in func_index.values()
-                if fn.class_id == caller.class_id and fn.name == method_name
-            ]
-            if len(candidates) == 1:
-                return candidates[0].id
+            resolved = resolve_method_in_hierarchy(caller.class_id, method_name)
+            if resolved:
+                return resolved
+        # Last resort: unique global name
+        candidates = name_index.get(method_name, [])
+        if len(candidates) == 1:
+            return candidates[0].id
         return None
 
-    # Case 1: simple name "foo"
+    # ── Case 0b: self.attr.method() — chained access, resolve last segment ──
+    if parts[0] in ("self", "cls") and len(parts) >= 3:
+        short = parts[-1]
+        candidates = name_index.get(short, [])
+        if len(candidates) == 1:
+            return candidates[0].id
+        return None
+
+    # ── Case 0c: super().method() — look in parent classes (+ cross-repo) ──
+    if parts[0] == "super()" and len(parts) == 2:
+        method_name = parts[1]
+        caller = func_index.get(call.caller_id)
+        if caller and caller.class_id:
+            cls_info = class_index.get(caller.class_id)
+            if cls_info:
+                for base_name in cls_info.base_classes:
+                    parent_id = _resolve_class(
+                        base_name, file_result.path, import_maps,
+                        class_index, class_name_index,
+                    )
+                    if parent_id:
+                        resolved = resolve_method_in_hierarchy(parent_id, method_name)
+                        if resolved:
+                            return resolved
+                    # Cross-repo: parent not in our index — try global name match
+                    candidates = name_index.get(method_name, [])
+                    if len(candidates) == 1:
+                        return candidates[0].id
+        return None
+
+    # ── Case 1: simple name "foo" ────────────────────────────────────────────
     if "." not in expr:
-        # imported alias?
+        # Imported alias?
         if expr in imports_for_file:
             target = imports_for_file[expr]
             if "." in target:
@@ -121,25 +198,43 @@ def _resolve_callee(
                 if resolved:
                     return resolved
 
-        # function defined in same file
-        same_module_candidates = [
+        # Same file first
+        same_file = [
             fn for fn in func_index.values()
             if fn.file == file_result.path and fn.name == expr
         ]
-        if len(same_module_candidates) == 1:
-            return same_module_candidates[0].id
+        if len(same_file) == 1:
+            return same_file[0].id
 
-        # unique function name across project
+        # Unique across project
         candidates = name_index.get(expr, [])
         if len(candidates) == 1:
             return candidates[0].id
 
+        # Disambiguation: prefer same module
+        if candidates:
+            same_module = [
+                fn for fn in candidates
+                if fn.qualname.startswith(file_result.module + ".")
+            ]
+            if len(same_module) == 1:
+                return same_module[0].id
+
+        # Star import fallback
+        for star_module in star_imports.get(file_result.path, []):
+            star_candidates = [
+                fn for fn in func_index.values()
+                if fn.qualname.startswith(star_module + ".") and fn.name == expr
+            ]
+            if len(star_candidates) == 1:
+                return star_candidates[0].id
+
         return None
 
-    # Case 2: dotted expression "alias.foo" / "pkg.mod.func"
+    # ── Case 2: dotted expression "alias.foo" / "pkg.mod.func" ──────────────
     head, *rest = parts
 
-    # head is import alias?
+    # head is an import alias?
     if head in imports_for_file:
         target = imports_for_file[head]
         module = target
@@ -148,7 +243,7 @@ def _resolve_callee(
         if resolved:
             return resolved
 
-    # head is module path?
+    # head is a module path?
     module_path = head
     if rest:
         candidate_name = rest[-1]
@@ -156,11 +251,15 @@ def _resolve_callee(
         if resolved:
             return resolved
 
-    # fallback: treat last segment as short name
+    # Fallback: treat last segment as short name with same-file preference
     short = parts[-1]
     candidates = name_index.get(short, [])
     if len(candidates) == 1:
         return candidates[0].id
+    if candidates:
+        same_file = [fn for fn in candidates if fn.file == file_result.path]
+        if len(same_file) == 1:
+            return same_file[0].id
 
     return None
 
@@ -241,6 +340,8 @@ def build_lineage(
     class_index = _build_class_index(files)
     class_name_index = _build_class_name_index(files)
     import_maps = _build_import_maps(files)
+    star_imports = _build_star_imports(files)
+    method_index = _build_method_index(func_index)
 
     assets: Dict[str, dict] = {}
     downstream_sets: Dict[str, set] = {}
@@ -311,7 +412,8 @@ def build_lineage(
     for fr in files.values():
         for call in fr.calls:
             callee_id = _resolve_callee(
-                call, fr, func_index, name_index, import_maps
+                call, fr, func_index, name_index, import_maps,
+                class_index, class_name_index, star_imports, method_index,
             )
             if not callee_id:
                 continue
