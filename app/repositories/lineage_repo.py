@@ -572,21 +572,7 @@ class LineageRepository:
         down_len = func.jsonb_array_length(FunctionBranch.downstream_ids)
         is_connected = or_(down_len > 0, up_len > 0)
 
-        # Stats query
-        stats_result = await self._s.execute(
-            select(
-                func.count().label("total"),
-                func.count().filter(is_connected).label("connected"),
-            )
-            .select_from(FunctionBranch)
-            .where(*base_where)
-        )
-        stats_row = stats_result.one()
-        total = stats_row.total
-        connected = stats_row.connected
-        isolated = total - connected
-
-        # Paginated query with inline total via window function
+        # Paginated query with inline filtered total via window function
         q = (
             select(
                 FunctionBranch.asset_id,
@@ -647,9 +633,6 @@ class LineageRepository:
 
         return {
             "nodes": nodes,
-            "total": total,
-            "connected": connected,
-            "isolated": isolated,
             "filtered_total": filtered_total,
             "offset": offset,
             "limit": limit,
