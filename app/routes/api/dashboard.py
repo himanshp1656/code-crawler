@@ -46,6 +46,8 @@ async def dashboard_data(
     user = await _get_user(request, session)
     tenant_repo = TenantRepository(session)
     tenant = await tenant_repo.get_by_id(user.tenant_id)
+    user_repo = UserRepository(session)
+    tenant_users = await user_repo.list_for_tenant(user.tenant_id)
     lineage_repo = LineageRepository(session)
     repo_branches = await lineage_repo.list_repo_branches(user.tenant_id)
     repo_map: dict = defaultdict(list)
@@ -71,6 +73,10 @@ async def dashboard_data(
         "tenant_name": tenant.tenant_name if tenant else user.tenant_id,
         "account_type": tenant.account_type if tenant else "personal",
         "repos": repos,
+        "users": [
+            {"id": u.id, "username": u.username, "is_active": u.is_active}
+            for u in tenant_users
+        ],
     }
 
 
