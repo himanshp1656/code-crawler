@@ -578,6 +578,9 @@ class LineageRepository:
             FunctionBranch.branch == branch,
         ]
 
+        up_len = func.jsonb_array_length(FunctionBranch.upstream_ids)
+        down_len = func.jsonb_array_length(FunctionBranch.downstream_ids)
+
         q = (
             select(
                 FunctionBranch.asset_id,
@@ -586,6 +589,8 @@ class LineageRepository:
                 FunctionDef.file_path,
                 FunctionDef.lineno,
                 FunctionDef.class_id,
+                up_len.label("upstream_count"),
+                down_len.label("downstream_count"),
                 func.count().over().label("_filtered_total"),
             )
             .join(FunctionDef, _join)
@@ -614,6 +619,8 @@ class LineageRepository:
                 "file": row.file_path,
                 "lineno": row.lineno,
                 "class_id": row.class_id,
+                "upstream_count": row.upstream_count,
+                "downstream_count": row.downstream_count,
             }
             for row in rows
         ]
