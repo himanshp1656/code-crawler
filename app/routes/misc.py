@@ -603,6 +603,19 @@ def _deep_equal(a, b) -> bool:
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
+@router.get("/lineage-stats")
+async def get_lineage_stats(
+    request: Request,
+    repo: str,
+    branch: str = "main",
+    session: AsyncSession = Depends(get_session),
+):
+    user = await _get_user(request, session)
+    safe_repo = normalize_repo_name(repo)
+    lineage_repo = LineageRepository(session)
+    return await lineage_repo.fetch_lineage_stats(user.tenant_id, safe_repo, branch)
+
+
 @router.get("/lineage-data")
 async def get_lineage_data(
     request: Request,
@@ -611,8 +624,6 @@ async def get_lineage_data(
     offset: int = 0,
     limit: int = 100,
     search: str = "",
-    filter: str = "connected",
-    sort: str = "connections",
     session: AsyncSession = Depends(get_session),
 ):
     user = await _get_user(request, session)
@@ -620,7 +631,7 @@ async def get_lineage_data(
     lineage_repo = LineageRepository(session)
     return await lineage_repo.fetch_lineage_data(
         user.tenant_id, safe_repo, branch,
-        offset=offset, limit=limit, search=search, filter=filter, sort=sort,
+        offset=offset, limit=limit, search=search,
     )
 
 

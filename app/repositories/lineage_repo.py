@@ -549,6 +549,27 @@ class LineageRepository:
 
     # ── Lineage page (list + filter + paginate) ────────────────────────────
 
+    async def fetch_lineage_stats(
+        self, tenant_id: str, repo: str, branch: str
+    ) -> Dict[str, Any]:
+        up_len = func.jsonb_array_length(FunctionBranch.upstream_ids)
+        down_len = func.jsonb_array_length(FunctionBranch.downstream_ids)
+        is_connected = or_(down_len > 0, up_len > 0)
+        result = await self._s.execute(
+            select(
+                func.count().label("total"),
+                func.count().filter(is_connected).label("connected"),
+            )
+            .select_from(FunctionBranch)
+            .where(
+                FunctionBranch.tenant_id == tenant_id,
+                FunctionBranch.repo == repo,
+                FunctionBranch.branch == branch,
+            )
+        )
+        row = result.one()
+        return {"total": row.total, "connected": row.connected, "isolated": row.total - row.connected}
+
     async def fetch_lineage_data(
         self,
         tenant_id: str,
@@ -558,8 +579,6 @@ class LineageRepository:
         offset: int = 0,
         limit: int = 100,
         search: str = "",
-        filter: str = "connected",
-        sort: str = "connections",
     ) -> Dict[str, Any]:
         _join = FunctionBranch.def_id == FunctionDef.id
         base_where = [
@@ -568,11 +587,6 @@ class LineageRepository:
             FunctionBranch.branch == branch,
         ]
 
-        up_len = func.jsonb_array_length(FunctionBranch.upstream_ids)
-        down_len = func.jsonb_array_length(FunctionBranch.downstream_ids)
-        is_connected = or_(down_len > 0, up_len > 0)
-
-        # Paginated query with inline filtered total via window function
         q = (
             select(
                 FunctionBranch.asset_id,
@@ -581,8 +595,6 @@ class LineageRepository:
                 FunctionDef.file_path,
                 FunctionDef.lineno,
                 FunctionDef.class_id,
-                down_len.label("downstream_count"),
-                up_len.label("upstream_count"),
                 func.count().over().label("_filtered_total"),
             )
             .join(FunctionDef, _join)
@@ -598,21 +610,7 @@ class LineageRepository:
                 )
             )
 
-        if filter == "connected":
-            q = q.where(is_connected)
-        elif filter == "upstream":
-            q = q.where(up_len > 0)
-        elif filter == "downstream":
-            q = q.where(down_len > 0)
-
-        if sort == "connections":
-            q = q.order_by((down_len + up_len).desc(), FunctionDef.name)
-        elif sort == "file":
-            q = q.order_by(FunctionDef.file_path, FunctionDef.name)
-        else:
-            q = q.order_by(FunctionDef.name)
-
-        q = q.offset(offset).limit(limit)
+        q = q.order_by(FunctionDef.name).offset(offset).limit(limit)
         result = await self._s.execute(q)
         rows = result.all()
         filtered_total = rows[0]._filtered_total if rows else 0
@@ -625,8 +623,6 @@ class LineageRepository:
                 "file": row.file_path,
                 "lineno": row.lineno,
                 "class_id": row.class_id,
-                "upstream_count": row.upstream_count,
-                "downstream_count": row.downstream_count,
             }
             for row in rows
         ]
