@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, List
 
-from sqlalchemy import ForeignKey, Index, Integer, PrimaryKeyConstraint, String, Text, func
+from sqlalchemy import ForeignKey, Index, Integer, PrimaryKeyConstraint, String, func
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -34,7 +34,6 @@ class LineageNode(Base):
     file_path: Mapped[str] = mapped_column(String, nullable=False)
     lineno: Mapped[int] = mapped_column(Integer, nullable=False)
     end_lineno: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    source: Mapped[str | None] = mapped_column(Text, nullable=True)
     module_context: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # function nodes: ID of the enclosing class node (null for top-level functions)

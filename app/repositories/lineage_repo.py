@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
+from app.models.function_source import FunctionSource
 from app.models.lineage_node import LineageNode
 from app.models.repo_settings import RepoSettings
 
@@ -41,6 +42,13 @@ class LineageRepository:
                 LineageNode.branch == branch,
             )
         )
+        await self._s.execute(
+            delete(FunctionSource).where(
+                FunctionSource.tenant_id == tenant_id,
+                FunctionSource.repo == repo,
+                FunctionSource.branch == branch,
+            )
+        )
 
         if lineage_assets:
             await self._s.execute(
@@ -59,7 +67,6 @@ class LineageRepository:
                         "file_path": a["file"],
                         "lineno": int(a["lineno"]),
                         "end_lineno": a.get("end_lineno"),
-                        "source": a.get("source"),
                         "module_context": a.get("module_context"),
                         "class_id": a.get("class_id"),
                         "base_class_ids": a.get("base_class_ids") or [],
@@ -71,6 +78,19 @@ class LineageRepository:
                     for a in lineage_assets
                 ],
             )
+            source_rows = [
+                {
+                    "asset_id": a["id"],
+                    "tenant_id": tenant_id,
+                    "repo": repo,
+                    "branch": branch,
+                    "source": a.get("source"),
+                }
+                for a in lineage_assets
+                if a.get("source")
+            ]
+            if source_rows:
+                await self._s.execute(insert(FunctionSource), source_rows)
 
         await self._s.flush()
         return len(lineage_assets)
@@ -243,7 +263,14 @@ class LineageRepository:
                 LineageNode.file_path,
                 LineageNode.lineno,
                 LineageNode.end_lineno,
-                LineageNode.source,
+                FunctionSource.source,
+            )
+            .outerjoin(
+                FunctionSource,
+                (FunctionSource.asset_id == LineageNode.asset_id)
+                & (FunctionSource.tenant_id == LineageNode.tenant_id)
+                & (FunctionSource.repo == LineageNode.repo)
+                & (FunctionSource.branch == LineageNode.branch),
             )
             .where(
                 LineageNode.tenant_id == tenant_id,
@@ -337,7 +364,16 @@ class LineageRepository:
         if not nodes_with_unresolved:
             return 0
 
-        # 3. Fetch all class nodes from ALL repos as resolution candidates
+        # 3. Fetch class nodes only from repos that have a known default branch.
+        # This avoids scanning all repos and fetching stale/non-default branches.
+        candidate_where = [
+            LineageNode.tenant_id == tenant_id,
+            LineageNode.node_type == "class",
+        ]
+        if default_branches:
+            candidate_where.append(LineageNode.repo.in_(list(default_branches.keys())))
+            candidate_where.append(LineageNode.branch.in_(list(default_branches.values())))
+
         candidates_result = await self._s.execute(
             select(
                 LineageNode.asset_id,
@@ -345,10 +381,7 @@ class LineageRepository:
                 LineageNode.file_path,
                 LineageNode.repo,
                 LineageNode.branch,
-            ).where(
-                LineageNode.tenant_id == tenant_id,
-                LineageNode.node_type == "class",
-            )
+            ).where(*candidate_where)
         )
         # Build candidate lookup: list of (asset_id, name, file_path, repo, branch)
         all_candidates = candidates_result.all()
@@ -449,6 +482,13 @@ class LineageRepository:
                 LineageNode.branch == branch,
             )
         )
+        await self._s.execute(
+            delete(FunctionSource).where(
+                FunctionSource.tenant_id == tenant_id,
+                FunctionSource.repo == repo,
+                FunctionSource.branch == branch,
+            )
+        )
         await self._s.flush()
         return result.rowcount
 
@@ -457,6 +497,12 @@ class LineageRepository:
             delete(LineageNode).where(
                 LineageNode.tenant_id == tenant_id,
                 LineageNode.repo == repo,
+            )
+        )
+        await self._s.execute(
+            delete(FunctionSource).where(
+                FunctionSource.tenant_id == tenant_id,
+                FunctionSource.repo == repo,
             )
         )
         await self._s.flush()
@@ -580,6 +626,13 @@ class LineageRepository:
     async def fetch_node_with_neighbors(
         self, tenant_id: str, repo: str, branch: str, asset_id: str
     ) -> Optional[Dict[str, Any]]:
+        _src_join = (
+            (FunctionSource.asset_id == LineageNode.asset_id)
+            & (FunctionSource.tenant_id == LineageNode.tenant_id)
+            & (FunctionSource.repo == LineageNode.repo)
+            & (FunctionSource.branch == LineageNode.branch)
+        )
+
         result = await self._s.execute(
             select(
                 LineageNode.asset_id,
@@ -588,14 +641,16 @@ class LineageRepository:
                 LineageNode.file_path,
                 LineageNode.lineno,
                 LineageNode.end_lineno,
-                LineageNode.source,
+                FunctionSource.source,
                 LineageNode.module_context,
                 LineageNode.class_id,
                 LineageNode.base_class_ids,
                 LineageNode.downstream_ids,
                 LineageNode.upstream_ids,
                 LineageNode.relationships,
-            ).where(
+            )
+            .outerjoin(FunctionSource, _src_join)
+            .where(
                 LineageNode.tenant_id == tenant_id,
                 LineageNode.repo == repo,
                 LineageNode.branch == branch,
@@ -629,7 +684,7 @@ class LineageRepository:
             LineageNode.file_path,
             LineageNode.lineno,
             LineageNode.end_lineno,
-            LineageNode.source,
+            FunctionSource.source,
             LineageNode.class_id,
             LineageNode.downstream_ids,
             LineageNode.upstream_ids,
@@ -642,7 +697,9 @@ class LineageRepository:
             all_fn_neighbor_ids = set(node["downstream_ids"]) | set(node["upstream_ids"])
             if all_fn_neighbor_ids:
                 fn_neighbor_result = await self._s.execute(
-                    select(*_neighbor_cols).where(
+                    select(*_neighbor_cols)
+                    .outerjoin(FunctionSource, _src_join)
+                    .where(
                         LineageNode.tenant_id == tenant_id,
                         LineageNode.repo == repo,
                         LineageNode.branch == branch,
