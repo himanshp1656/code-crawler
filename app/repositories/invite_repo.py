@@ -50,15 +50,18 @@ class InviteRepository:
         )
         return result.scalar_one_or_none()
 
-    async def get_valid_for_tenant(self, tenant_id: str) -> Optional[InviteToken]:
-        """Return the existing valid (not expired, not used up) token for a tenant."""
+    async def list_for_tenant(self, tenant_id: str) -> list[InviteToken]:
         result = await self._s.execute(
-            select(InviteToken).where(InviteToken.tenant_id == tenant_id)
+            select(InviteToken)
+            .where(InviteToken.tenant_id == tenant_id)
+            .options(selectinload(InviteToken.created_by))
+            .order_by(InviteToken.created_at.desc())
         )
-        for invite in result.scalars().all():
-            if self.is_valid(invite):
-                return invite
-        return None
+        return list(result.scalars().all())
+
+    async def delete(self, invite: InviteToken) -> None:
+        await self._s.delete(invite)
+        await self._s.flush()
 
     async def increment_used(self, invite: InviteToken) -> None:
         invite.used_count += 1

@@ -34,6 +34,28 @@ class AcceptInviteRequest(BaseModel):
     password: str
 
 
+def _invite_dict(invite: InviteToken) -> dict:
+    return {
+        "token": invite.token,
+        "max_uses": invite.max_uses,
+        "used_count": invite.used_count,
+        "expires_at": invite.expires_at.isoformat() if invite.expires_at else None,
+        "created_by": invite.created_by.username if invite.created_by else None,
+        "is_valid": (
+            (invite.expires_at is None or invite.expires_at > datetime.now(timezone.utc))
+            and invite.used_count < invite.max_uses
+        ),
+    }
+
+
+@router.get("/list")
+async def list_invites(request: Request, session: AsyncSession = Depends(get_session)):
+    user = await _get_user(request, session)
+    invite_repo = InviteRepository(session)
+    invites = await invite_repo.list_for_tenant(user.tenant_id)
+    return {"invites": [_invite_dict(i) for i in invites]}
+
+
 @router.post("/generate")
 async def generate_invite(
     body: GenerateInviteRequest,
@@ -42,18 +64,6 @@ async def generate_invite(
 ):
     user = await _get_user(request, session)
     invite_repo = InviteRepository(session)
-
-    # Reuse existing valid token if one exists
-    existing = await invite_repo.get_valid_for_tenant(user.tenant_id)
-    if existing:
-        await session.commit()
-        return {
-            "token": existing.token,
-            "max_uses": existing.max_uses,
-            "used_count": existing.used_count,
-            "expires_at": existing.expires_at.isoformat() if existing.expires_at else None,
-        }
-
     expires_at = datetime.now(timezone.utc) + timedelta(hours=body.expires_in_hours)
     invite = await invite_repo.create(
         tenant_id=user.tenant_id,
@@ -62,12 +72,19 @@ async def generate_invite(
         expires_at=expires_at,
     )
     await session.commit()
-    return {
-        "token": invite.token,
-        "max_uses": invite.max_uses,
-        "used_count": invite.used_count,
-        "expires_at": invite.expires_at.isoformat() if invite.expires_at else None,
-    }
+    return _invite_dict(invite)
+
+
+@router.delete("/{token}")
+async def revoke_invite(token: str, request: Request, session: AsyncSession = Depends(get_session)):
+    user = await _get_user(request, session)
+    invite_repo = InviteRepository(session)
+    invite = await invite_repo.get_by_token(token)
+    if not invite or invite.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    await invite_repo.delete(invite)
+    await session.commit()
+    return {"ok": True}
 
 
 @router.get("/{token}")
