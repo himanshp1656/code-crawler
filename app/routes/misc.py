@@ -624,6 +624,7 @@ async def get_lineage_data(
     offset: int = 0,
     limit: int = 100,
     search: str = "",
+    sort: str = "connections",
     session: AsyncSession = Depends(get_session),
 ):
     user = await _get_user(request, session)
@@ -631,7 +632,7 @@ async def get_lineage_data(
     lineage_repo = LineageRepository(session)
     return await lineage_repo.fetch_lineage_data(
         user.tenant_id, safe_repo, branch,
-        offset=offset, limit=limit, search=search,
+        offset=offset, limit=limit, search=search, sort=sort,
     )
 
 

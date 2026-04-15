@@ -570,6 +570,7 @@ class LineageRepository:
         offset: int = 0,
         limit: int = 100,
         search: str = "",
+        sort: str = "connections",
     ) -> Dict[str, Any]:
         _join = FunctionBranch.def_id == FunctionDef.id
         base_where = [
@@ -606,7 +607,13 @@ class LineageRepository:
                 )
             )
 
-        q = q.order_by(FunctionDef.name).offset(offset).limit(limit)
+        if sort == "connections":
+            q = q.order_by((down_len + up_len).desc(), FunctionDef.name)
+        elif sort == "file":
+            q = q.order_by(FunctionDef.file_path, FunctionDef.name)
+        else:
+            q = q.order_by(FunctionDef.name)
+        q = q.offset(offset).limit(limit)
         result = await self._s.execute(q)
         rows = result.all()
         filtered_total = rows[0]._filtered_total if rows else 0
