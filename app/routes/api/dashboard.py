@@ -12,6 +12,7 @@ from app.db import get_session
 from app.repositories.lineage_repo import LineageRepository, normalize_repo_name
 from app.repositories.tenant_repo import TenantRepository
 from app.repositories.user_repo import UserRepository
+from app.routes.api.workflows import insert_crawl_job
 from app.workflow import TASK_QUEUE, CodeCrawlerWorkflow
 
 router = APIRouter()
@@ -115,12 +116,17 @@ async def crawl(
     user = await _get_user(request, session)
     client = request.app.state.temporal_client
     assert client is not None, "Temporal client not initialised"
+    wf_id = f"code-crawler-{user.tenant_id}-{body.branch}-{body.github_repo_url.rsplit('/', 1)[-1]}"
     handle = await client.start_workflow(
         CodeCrawlerWorkflow.run,
         args=[body.github_repo_url, body.branch, "python", None, user.tenant_id, None, str(user.id)],
-        id=f"code-crawler-{user.tenant_id}-{body.branch}-{body.github_repo_url.rsplit('/', 1)[-1]}",
+        id=wf_id,
         task_queue=TASK_QUEUE,
     )
+    repo_name = normalize_repo_name(body.github_repo_url)
+    await insert_crawl_job(session, tenant_id=user.tenant_id, user_id=user.id,
+        workflow_id=handle.id, repo=repo_name, branch=body.branch, triggered_by=user.username)
+    await session.commit()
     return {"workflow_id": handle.id, "status": "started"}
 
 
@@ -177,10 +183,14 @@ async def crawl_local(
 
     client = request.app.state.temporal_client
     assert client is not None, "Temporal client not initialised"
+    wf_id = f"code-crawler-{user.tenant_id}-{branch}-{safe_name}"
     handle = await client.start_workflow(
         CodeCrawlerWorkflow.run,
         args=[safe_name, branch, "python", None, user.tenant_id, str(repo_dir.resolve()), str(user.id)],
-        id=f"code-crawler-{user.tenant_id}-{branch}-{safe_name}",
+        id=wf_id,
         task_queue=TASK_QUEUE,
     )
+    await insert_crawl_job(session, tenant_id=user.tenant_id, user_id=user.id,
+        workflow_id=handle.id, repo=safe_name, branch=branch, triggered_by=user.username)
+    await session.commit()
     return {"workflow_id": handle.id, "status": "started"}
