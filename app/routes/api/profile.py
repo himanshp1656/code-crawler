@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
-from app.models.lineage_node import LineageNode
+from app.models.function_branch import FunctionBranch
 from app.repositories.lineage_repo import LineageRepository
 from app.repositories.tenant_repo import TenantRepository
 from app.repositories.user_repo import UserRepository
@@ -30,12 +30,12 @@ async def public_profile(
     # Function counts per (repo, branch)
     count_result = await session.execute(
         select(
-            LineageNode.repo,
-            LineageNode.branch,
-            func.count(LineageNode.asset_id).label("cnt"),
+            FunctionBranch.repo,
+            FunctionBranch.branch,
+            func.count(FunctionBranch.asset_id).label("cnt"),
         )
-        .where(LineageNode.tenant_id == handle)
-        .group_by(LineageNode.repo, LineageNode.branch)
+        .where(FunctionBranch.tenant_id == handle)
+        .group_by(FunctionBranch.repo, FunctionBranch.branch)
     )
     func_counts = {(r, b): c for r, b, c in count_result.all()}
 

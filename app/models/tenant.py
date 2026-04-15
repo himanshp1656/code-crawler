@@ -10,7 +10,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
 
 if TYPE_CHECKING:
-    from .lineage_node import LineageNode
     from .user import User
 
 
@@ -30,10 +29,6 @@ class Tenant(Base):
     )
 
     users: Mapped[List[User]] = relationship(
-        back_populates="tenant",
-        cascade="all, delete-orphan",
-    )
-    lineage_nodes: Mapped[List[LineageNode]] = relationship(
         back_populates="tenant",
         cascade="all, delete-orphan",
     )
