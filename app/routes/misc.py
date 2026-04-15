@@ -51,22 +51,12 @@ class AnalyzeFunctionRequest(BaseModel):
     source: str
 
 
-class SuggestMocksRequest(BaseModel):
-    source: str
-    callee_sources: list = []
-    free_names: list = []
-
 
 class AnalyzeAssetRequest(BaseModel):
     asset_id: str
     repo: str
     branch: str
 
-
-class SuggestFixRequest(BaseModel):
-    source: str
-    error: str
-    callee_sources: list = []
 
 
 class RunInRepoRequest(BaseModel):
@@ -90,9 +80,6 @@ class BulkSaveTestCasesRequest(BaseModel):
     function_name: str
     cases: list
 
-
-class GenerateTestCasesRequest(BaseModel):
-    source: str
 
 
 class AssertTestCaseRequest(BaseModel):
@@ -677,45 +664,6 @@ async def analyze_function(
     return _analyze_function(body.source)
 
 
-@router.post("/suggest-mocks")
-async def suggest_mocks(
-    request: Request,
-    body: SuggestMocksRequest,
-    session: AsyncSession = Depends(get_session),
-):
-    import httpx
-    await _get_user(request, session)
-    api_key = os.environ.get("LITELLM_API_KEY", "")
-    if not api_key:
-        return {"error": "LITELLM_API_KEY not set", "params": {}, "mocks": {}}
-
-    callee_section = ""
-    if body.callee_sources:
-        callee_section = "\n\nCallee functions:\n" + "\n---\n".join(f"```python\n{s}\n```" for s in body.callee_sources[:5])
-
-    callables = [n["name"] for n in body.free_names if isinstance(n, dict) and n.get("callable")]
-    values = [n["name"] for n in body.free_names if isinstance(n, dict) and not n.get("callable")]
-    mocks_desc = ""
-    if callables:
-        mocks_desc += f"\nCallable mocks: {', '.join(callables)}"
-    if values:
-        mocks_desc += f"\nValue mocks: {', '.join(values)}"
-
-    prompt = f"""Suggest minimal mock values for this Python function.\n\nFunction:\n```python\n{body.source}\n```{callee_section}\n\nExternal names:{mocks_desc}\n\nReturn ONLY JSON: {{"params": {{}}, "mocks": {{}}}}"""
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                "https://llmproxy.atlan.dev/chat/completions",
-                headers={"x-litellm-api-key": api_key, "Content-Type": "application/json"},
-                json={"model": "claude-haiku-4-5-20251001", "max_tokens": 1024,
-                      "messages": [{"role": "user", "content": prompt}]},
-            )
-            resp.raise_for_status()
-            text = resp.json()["choices"][0]["message"]["content"].strip()
-        return _extract_json(text)
-    except Exception as exc:
-        return {"error": str(exc), "params": {}, "mocks": {}}
-
 
 @router.post("/analyze-asset")
 async def analyze_asset(
@@ -792,47 +740,6 @@ async def analyze_asset(
     return {"needs_mock": needs_mock, "callee_sources": callee_sources,
             "callee_count": len(callee_sources), "module_context": module_context}
 
-
-@router.post("/suggest-fix")
-async def suggest_fix(
-    request: Request,
-    body: SuggestFixRequest,
-    session: AsyncSession = Depends(get_session),
-):
-    import httpx
-    await _get_user(request, session)
-    api_key = os.environ.get("LITELLM_API_KEY", "")
-    if not api_key:
-        return {"error": "LITELLM_API_KEY not set", "params": {}, "mocks": {}}
-
-    analysis = _analyze_function(body.source)
-    free_names = analysis.get("needs_mock", [])
-    callables = [n["name"] for n in free_names if n.get("callable")]
-    values = [n["name"] for n in free_names if not n.get("callable")]
-    mocks_desc = ""
-    if callables:
-        mocks_desc += f"\nCallable mocks needed: {', '.join(callables)}"
-    if values:
-        mocks_desc += f"\nValue mocks needed: {', '.join(values)}"
-
-    callee_section = ""
-    if body.callee_sources:
-        callee_section = "\n\nCallee functions:\n" + "\n---\n".join(f"```python\n{s}\n```" for s in body.callee_sources[:5])
-
-    prompt = f"""Debug this Python function error and suggest corrected values.\n\nFunction:\n```python\n{body.source}\n```{callee_section}\n\nError:\n```\n{body.error}\n```\n\nMocks needed:{mocks_desc if mocks_desc else ' (none)'}\n\nReturn ONLY JSON: {{"params": {{}}, "mocks": {{}}}}"""
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                "https://llmproxy.atlan.dev/chat/completions",
-                headers={"x-litellm-api-key": api_key, "Content-Type": "application/json"},
-                json={"model": "claude-haiku-4-5-20251001", "max_tokens": 1024,
-                      "messages": [{"role": "user", "content": prompt}]},
-            )
-            resp.raise_for_status()
-            text = resp.json()["choices"][0]["message"]["content"].strip()
-        return _extract_json(text)
-    except Exception as exc:
-        return {"error": str(exc), "params": {}, "mocks": {}}
 
 
 @router.post("/run-in-repo")
@@ -918,45 +825,6 @@ async def bulk_create_test_cases(
         created.append({"id": tc.id, "label": tc.label, "args": tc.args, "expected": tc.expected})
     return created
 
-
-@router.post("/generate-test-cases")
-async def generate_test_cases(
-    request: Request,
-    body: GenerateTestCasesRequest,
-    session: AsyncSession = Depends(get_session),
-):
-    import httpx
-    await _get_user(request, session)
-    api_key = os.environ.get("LITELLM_API_KEY", "")
-    if not api_key:
-        return {"error": "LITELLM_API_KEY not set", "cases": []}
-
-    prompt = f"""Generate 6-10 diverse test cases for this Python function. Return ONLY a JSON array.\nFormat: [{{"label": "name", "args": {{"param": value}}}}]\n\nFunction:\n{body.source}"""
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                "https://llmproxy.atlan.dev/chat/completions",
-                headers={"x-litellm-api-key": api_key, "Content-Type": "application/json"},
-                json={"model": "claude-haiku-4-5-20251001", "max_tokens": 2048,
-                      "messages": [{"role": "user", "content": prompt}]},
-            )
-            resp.raise_for_status()
-            text = resp.json()["choices"][0]["message"]["content"].strip()
-        if text.startswith("```"):
-            text = "\n".join(l for l in text.splitlines() if not l.strip().startswith("```")).strip()
-        start = text.find("[")
-        end = text.rfind("]")
-        if start == -1 or end == -1:
-            return {"error": "No JSON array found", "cases": []}
-        raw = text[start:end + 1]
-        raw = re.sub(r'\bNone\b', 'null', raw)
-        raw = re.sub(r'\bTrue\b', 'true', raw)
-        raw = re.sub(r'\bFalse\b', 'false', raw)
-        raw = re.sub(r',\s*([\]}])', r'\1', raw)
-        cases = json.loads(raw)
-        return {"cases": cases if isinstance(cases, list) else []}
-    except Exception as exc:
-        return {"error": str(exc), "cases": []}
 
 
 @router.patch("/test-cases/{tc_id}/expected")
