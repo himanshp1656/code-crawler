@@ -1,9 +1,10 @@
 from .admin_account import AdminAccount
 from .base import Base
+from .invite_token import InviteToken
 from .lineage_node import LineageNode
 from .repo_settings import RepoSettings
 from .tenant import Tenant
 from .test_case import FunctionTestCase
 from .user import User
 
-__all__ = ["Base", "Tenant", "User", "LineageNode", "AdminAccount", "FunctionTestCase", "RepoSettings"]
+__all__ = ["Base", "Tenant", "User", "LineageNode", "AdminAccount", "FunctionTestCase", "RepoSettings", "InviteToken"]

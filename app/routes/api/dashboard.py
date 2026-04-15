@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.repositories.lineage_repo import LineageRepository, normalize_repo_name
+from app.repositories.tenant_repo import TenantRepository
 from app.repositories.user_repo import UserRepository
 from app.workflow import TASK_QUEUE, CodeCrawlerWorkflow
 
@@ -43,6 +44,8 @@ async def dashboard_data(
     session: AsyncSession = Depends(get_session),
 ):
     user = await _get_user(request, session)
+    tenant_repo = TenantRepository(session)
+    tenant = await tenant_repo.get_by_id(user.tenant_id)
     lineage_repo = LineageRepository(session)
     repo_branches = await lineage_repo.list_repo_branches(user.tenant_id)
     repo_map: dict = defaultdict(list)
@@ -63,7 +66,12 @@ async def dashboard_data(
         }
         for repo, branches in repo_map.items()
     ]
-    return {"tenant_id": user.tenant_id, "repos": repos}
+    return {
+        "tenant_id": user.tenant_id,
+        "tenant_name": tenant.tenant_name if tenant else user.tenant_id,
+        "account_type": tenant.account_type if tenant else "personal",
+        "repos": repos,
+    }
 
 
 @router.get("/lineage/classes")
