@@ -590,29 +590,15 @@ except Exception as _e:
     if not os.path.isfile(sentinel):
         if not os.path.isdir(venv_dir):
             subprocess.run([sys.executable, "-m", "venv", venv_dir], capture_output=True)
-        # Upgrade pip and install build tools first
-        subprocess.run([python_bin, "-m", "pip", "install", "--upgrade", "pip", "hatchling", "hatch-vcs", "-q"],
-                       capture_output=True)
         req_file = os.path.join(clone_dir, "requirements.txt")
         if os.path.isfile(req_file):
             subprocess.run([python_bin, "-m", "pip", "install", "-r", req_file, "-q"], capture_output=True)
-        # Install the repo itself if it's a package (pyproject.toml or setup.py)
+        # Install the repo itself + all its declared dependencies
         for pkg_file in ("pyproject.toml", "setup.py", "setup.cfg"):
             if os.path.isfile(os.path.join(clone_dir, pkg_file)):
-                subprocess.run([python_bin, "-m", "pip", "install", "-e", ".", "-q", "--no-deps"],
+                subprocess.run([python_bin, "-m", "pip", "install", "-e", ".", "-q"],
                                capture_output=True, cwd=clone_dir)
                 break
-        # Install sibling cloned repos as local packages (handles internal deps not on PyPI)
-        repos_dir = os.path.dirname(clone_dir)
-        for sibling in os.listdir(repos_dir):
-            sibling_path = os.path.join(repos_dir, sibling)
-            if sibling_path == clone_dir or not os.path.isdir(sibling_path):
-                continue
-            for pkg_file in ("pyproject.toml", "setup.py", "setup.cfg"):
-                if os.path.isfile(os.path.join(sibling_path, pkg_file)):
-                    subprocess.run([python_bin, "-m", "pip", "install", "-e", sibling_path, "-q"],
-                                   capture_output=True)
-                    break
         open(sentinel, "w").close()
 
     # Install any extra packages the user requested
