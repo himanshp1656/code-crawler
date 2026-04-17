@@ -639,8 +639,11 @@ def _run_in_repo(clone_dir, venv_dir, file_path, func_name, args, edited_source=
                 install_ok = False
         for pkg_file in ("pyproject.toml", "setup.py", "setup.cfg"):
             if os.path.isfile(os.path.join(clone_dir, pkg_file)):
-                r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".", "-q"],
+                r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".[all]", "-q"],
                                    capture_output=True, cwd=clone_dir)
+                if r.returncode != 0:
+                    r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".", "-q"],
+                                       capture_output=True, cwd=clone_dir)
                 if r.returncode != 0:
                     install_ok = False
                 break
@@ -702,10 +705,13 @@ def _run_in_repo_stream(clone_dir, venv_dir, file_path, func_name, args, edited_
         for pkg_file in ("pyproject.toml", "setup.py", "setup.cfg"):
             if os.path.isfile(os.path.join(clone_dir, pkg_file)):
                 emit(f"Installing package ({pkg_file})...")
-                r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".", "-q"], capture_output=True, cwd=clone_dir)
+                r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".[all]", "-q"], capture_output=True, cwd=clone_dir)
+                if r.returncode != 0:
+                    # fallback: install without extras
+                    r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".", "-q"], capture_output=True, cwd=clone_dir)
                 if r.returncode != 0:
                     install_ok = False
-                    emit(f"Warning: package install had errors")
+                    emit("Warning: package install had errors")
                 break
         if install_ok:
             open(sentinel, "w").close()
