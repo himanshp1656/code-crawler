@@ -7,10 +7,13 @@ import math as _math
 import os
 import queue
 import re
+import shutil
 import subprocess
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
+
+_UV = shutil.which("uv")  # None if uv not installed
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -631,19 +634,29 @@ def _run_in_repo(clone_dir, venv_dir, file_path, func_name, args, edited_source=
     if not os.path.isfile(sentinel):
         install_ok = True
         if not os.path.isdir(venv_dir):
-            subprocess.run([sys.executable, "-m", "venv", venv_dir], capture_output=True)
+            if _UV:
+                subprocess.run([_UV, "venv", venv_dir], capture_output=True)
+            else:
+                subprocess.run([sys.executable, "-m", "venv", venv_dir], capture_output=True)
+            python_bin = os.path.join(venv_dir, "bin", "python")
         req_file = os.path.join(clone_dir, "requirements.txt")
         if os.path.isfile(req_file):
-            r = subprocess.run([python_bin, "-m", "pip", "install", "-r", req_file, "-q"], capture_output=True)
+            if _UV:
+                r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-r", req_file], capture_output=True)
+            else:
+                r = subprocess.run([python_bin, "-m", "pip", "install", "-r", req_file, "-q"], capture_output=True)
             if r.returncode != 0:
                 install_ok = False
         for pkg_file in ("pyproject.toml", "setup.py", "setup.cfg"):
             if os.path.isfile(os.path.join(clone_dir, pkg_file)):
-                r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".[all]", "-q"],
-                                   capture_output=True, cwd=clone_dir)
-                if r.returncode != 0:
-                    r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".", "-q"],
-                                       capture_output=True, cwd=clone_dir)
+                if _UV:
+                    r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-e", ".[all]"], capture_output=True, cwd=clone_dir)
+                    if r.returncode != 0:
+                        r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-e", "."], capture_output=True, cwd=clone_dir)
+                else:
+                    r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".[all]", "-q"], capture_output=True, cwd=clone_dir)
+                    if r.returncode != 0:
+                        r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".", "-q"], capture_output=True, cwd=clone_dir)
                 if r.returncode != 0:
                     install_ok = False
                 break
@@ -693,22 +706,32 @@ def _run_in_repo_stream(clone_dir, venv_dir, file_path, func_name, args, edited_
         install_ok = True
         if not os.path.isdir(venv_dir):
             emit("Creating virtual environment...")
-            subprocess.run([sys.executable, "-m", "venv", venv_dir], capture_output=True)
+            if _UV:
+                subprocess.run([_UV, "venv", venv_dir], capture_output=True)
+            else:
+                subprocess.run([sys.executable, "-m", "venv", venv_dir], capture_output=True)
             python_bin = os.path.join(venv_dir, "bin", "python")
         req_file = os.path.join(clone_dir, "requirements.txt")
         if os.path.isfile(req_file):
             emit("Installing requirements.txt...")
-            r = subprocess.run([python_bin, "-m", "pip", "install", "-r", req_file, "-q"], capture_output=True)
+            if _UV:
+                r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-r", req_file], capture_output=True)
+            else:
+                r = subprocess.run([python_bin, "-m", "pip", "install", "-r", req_file, "-q"], capture_output=True)
             if r.returncode != 0:
                 install_ok = False
-                emit(f"Warning: requirements.txt install had errors")
+                emit("Warning: requirements.txt install had errors")
         for pkg_file in ("pyproject.toml", "setup.py", "setup.cfg"):
             if os.path.isfile(os.path.join(clone_dir, pkg_file)):
                 emit(f"Installing package ({pkg_file})...")
-                r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".[all]", "-q"], capture_output=True, cwd=clone_dir)
-                if r.returncode != 0:
-                    # fallback: install without extras
-                    r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".", "-q"], capture_output=True, cwd=clone_dir)
+                if _UV:
+                    r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-e", ".[all]"], capture_output=True, cwd=clone_dir)
+                    if r.returncode != 0:
+                        r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-e", "."], capture_output=True, cwd=clone_dir)
+                else:
+                    r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".[all]", "-q"], capture_output=True, cwd=clone_dir)
+                    if r.returncode != 0:
+                        r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".", "-q"], capture_output=True, cwd=clone_dir)
                 if r.returncode != 0:
                     install_ok = False
                     emit("Warning: package install had errors")
