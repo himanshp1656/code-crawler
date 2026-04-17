@@ -497,9 +497,7 @@ def _extract_json(text: str) -> dict:
     return json.loads(text)
 
 
-def _run_in_repo(clone_dir, venv_dir, file_path, func_name, args, edited_source=None, mock_definitions=None, pip_packages=None):
-    import importlib.util
-    _REPO_RUNNER_SCRIPT = r"""
+_REPO_RUNNER_SCRIPT = r"""
 import sys, json, io, asyncio, importlib, inspect
 from unittest.mock import MagicMock, AsyncMock
 
@@ -618,6 +616,10 @@ except Exception as _e:
     sys.stdout = _real
     print(json.dumps({"ok": False, "error": str(_e), "stdout": _buf.getvalue()}))
 """
+
+
+def _run_in_repo(clone_dir, venv_dir, file_path, func_name, args, edited_source=None, mock_definitions=None, pip_packages=None):
+    import importlib.util
     parts = file_path.replace("\\", "/").split("/")
     module = ".".join(p for p in parts if p).replace(".py", "")
 
