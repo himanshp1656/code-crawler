@@ -76,7 +76,11 @@ echo "Nginx configured successfully"
 
 # Temporal UI — password protected
 sudo apt install -y apache2-utils
-echo "Him@211656032" | sudo htpasswd -i -c /etc/nginx/temporal_htpasswd himanshp1656
+if [ -z "$TEMPORAL_UI_PASSWORD" ] || [ -z "$TEMPORAL_UI_USER" ]; then
+  echo "ERROR: TEMPORAL_UI_USER and TEMPORAL_UI_PASSWORD must be set"
+  exit 1
+fi
+echo "$TEMPORAL_UI_PASSWORD" | sudo htpasswd -i -c /etc/nginx/temporal_htpasswd "$TEMPORAL_UI_USER"
 
 sudo tee /etc/nginx/sites-available/temporal << 'EOF'
 server {
