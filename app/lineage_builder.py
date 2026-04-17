@@ -1,7 +1,7 @@
 import logging
 import os
 import json
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 
 from .python_ast_parser import CallInfo, ClassDefInfo, FileParseResult, FunctionDefInfo, ImportInfo
 
@@ -323,7 +323,7 @@ def build_lineage(
     files: Dict[str, FileParseResult],
     workflow_id: str,
     run_id: str,
-) -> List[dict]:
+) -> Tuple[List[dict], List[dict]]:
     """
     Build the full lineage graph — functions AND classes — as a flat list of assets.
 
@@ -409,6 +409,9 @@ def build_lineage(
         upstream_sets[fn.id] = set()
 
     # --- Call edges (function → function) ---
+    unresolved_calls: List[dict] = []
+    seen_unresolved: set = set()
+
     for fr in files.values():
         for call in fr.calls:
             callee_id = _resolve_callee(
@@ -416,6 +419,30 @@ def build_lineage(
                 class_index, class_name_index, star_imports, method_index,
             )
             if not callee_id:
+                # Capture unresolved self/super calls for cross-repo resolution later
+                parts = call.func_expr.split(".")
+                key = (call.caller_id, call.func_expr)
+                if key not in seen_unresolved:
+                    if parts[0] in ("self", "cls") and len(parts) == 2:
+                        caller = func_index.get(call.caller_id)
+                        if caller and caller.class_id:
+                            seen_unresolved.add(key)
+                            unresolved_calls.append({
+                                "caller_id": call.caller_id,
+                                "method": parts[1],
+                                "call_type": "self",
+                                "caller_class_id": caller.class_id,
+                            })
+                    elif parts[0] == "super()" and len(parts) == 2:
+                        caller = func_index.get(call.caller_id)
+                        if caller and caller.class_id:
+                            seen_unresolved.add(key)
+                            unresolved_calls.append({
+                                "caller_id": call.caller_id,
+                                "method": parts[1],
+                                "call_type": "super",
+                                "caller_class_id": caller.class_id,
+                            })
                 continue
             caller_id = call.caller_id
             if caller_id == callee_id:
@@ -481,8 +508,64 @@ def build_lineage(
                 existing.append(entry)
 
     logger.info(
-        "build_lineage: %d function assets, %d class assets",
+        "build_lineage: %d function assets, %d class assets, %d unresolved self/super calls",
         sum(1 for a in assets.values() if a["node_type"] == "function"),
         sum(1 for a in assets.values() if a["node_type"] == "class"),
+        len(unresolved_calls),
     )
-    return list(assets.values())
+    return list(assets.values()), unresolved_calls
+
+
+def resolve_unresolved_calls(
+    unresolved_calls: List[dict],
+    cross_lookup: Dict[str, str],
+    class_hierarchy: Dict[str, dict],
+) -> List[dict]:
+    """BFS through the class hierarchy to resolve cross-repo self/super calls.
+
+    Args:
+        unresolved_calls: list of {caller_id, method, call_type, caller_class_id}
+        cross_lookup: {"ClassName.method_name": fn_id} from other repos
+        class_hierarchy: {class_id: {"name": str, "base_class_ids": [...]}} all repos
+
+    Returns:
+        list of {caller_id, callee_id} patches to apply to the DB
+    """
+    patches: List[dict] = []
+
+    for call in unresolved_calls:
+        caller_class_id = call["caller_class_id"]
+        method = call["method"]
+        skip_self = call["call_type"] == "super"
+
+        # BFS start point
+        start_cls = class_hierarchy.get(caller_class_id, {})
+        if skip_self:
+            queue = list(start_cls.get("base_class_ids", []))
+        else:
+            queue = [caller_class_id]
+
+        visited: set = set()
+        resolved = None
+
+        while queue:
+            cid = queue.pop(0)
+            if cid in visited:
+                continue
+            visited.add(cid)
+            cls = class_hierarchy.get(cid)
+            if not cls:
+                continue
+            fn_id = cross_lookup.get(f"{cls['name']}.{method}")
+            if fn_id:
+                resolved = fn_id
+                break
+            for parent_id in cls.get("base_class_ids", []):
+                if parent_id not in visited:
+                    queue.append(parent_id)
+
+        if resolved:
+            patches.append({"caller_id": call["caller_id"], "callee_id": resolved})
+
+    logger.info("resolve_unresolved_calls: resolved %d / %d cross-repo edges", len(patches), len(unresolved_calls))
+    return patches

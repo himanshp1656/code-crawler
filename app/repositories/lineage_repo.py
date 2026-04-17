@@ -496,6 +496,128 @@ class LineageRepository:
         await self._s.commit()
         return resolved_count
 
+    # ── Cross-repo function lineage resolution ─────────────────────────────
+
+    async def fetch_cross_repo_function_lookup(
+        self, tenant_id: str, exclude_repo: str
+    ) -> Dict[str, str]:
+        """Build {"ClassName.method_name": fn_id} from other repos' default branches."""
+        try:
+            settings_result = await self._s.execute(
+                select(RepoSettings.repo, RepoSettings.default_branch)
+                .where(RepoSettings.tenant_id == tenant_id)
+            )
+            default_branches = {r: b for r, b in settings_result.all()}
+        except Exception:
+            default_branches = {}
+
+        other_repos = {r: b for r, b in default_branches.items() if r != exclude_repo}
+        if not other_repos:
+            logger.warning("fetch_cross_repo_function_lookup: no default branches set for other repos in tenant %s", tenant_id)
+            return {}
+
+        from sqlalchemy import and_
+        conditions = [
+            and_(FunctionBranch.repo == r, FunctionBranch.branch == b)
+            for r, b in other_repos.items()
+        ]
+
+        result = await self._s.execute(
+            select(FunctionBranch.asset_id, FunctionDef.name)
+            .join(FunctionDef, FunctionBranch.def_id == FunctionDef.id)
+            .where(
+                FunctionBranch.tenant_id == tenant_id,
+                FunctionDef.node_type == "function",
+                or_(*conditions),
+            )
+        )
+
+        lookup: Dict[str, str] = {}
+        for r in result.all():
+            # FunctionDef.name stores qualname e.g. "BaseMetadataExtractor.upload"
+            parts = r.name.rsplit(".", 1)
+            if len(parts) == 2:
+                class_name = parts[0].rsplit(".", 1)[-1]  # strip any module prefix
+                method_name = parts[1]
+                key = f"{class_name}.{method_name}"
+                if key not in lookup:
+                    lookup[key] = r.asset_id
+        return lookup
+
+    async def fetch_all_class_hierarchy(self, tenant_id: str) -> Dict[str, dict]:
+        """Return {class_id: {"name": str, "base_class_ids": [...]}} for all classes in tenant.
+
+        Includes all repos so BFS can walk the full cross-repo inheritance chain.
+        Called AFTER resolve_cross_repo_bases so base_class_ids are fully resolved.
+        """
+        result = await self._s.execute(
+            select(FunctionBranch.asset_id, FunctionDef.name, FunctionBranch.base_class_ids)
+            .join(FunctionDef, FunctionBranch.def_id == FunctionDef.id)
+            .where(
+                FunctionBranch.tenant_id == tenant_id,
+                FunctionDef.node_type == "class",
+            )
+        )
+        hierarchy: Dict[str, dict] = {}
+        for r in result.all():
+            if r.asset_id not in hierarchy:
+                # FunctionDef.name stores qualname e.g. "BaseMetadataExtractor"
+                short_name = r.name.rsplit(".", 1)[-1]
+                hierarchy[r.asset_id] = {
+                    "name": short_name,
+                    "base_class_ids": r.base_class_ids or [],
+                }
+        return hierarchy
+
+    async def patch_function_edges(
+        self,
+        tenant_id: str,
+        repo: str,
+        branch: str,
+        patches: List[Dict[str, str]],
+    ) -> int:
+        """Append cross-repo call edges to upstream_ids/downstream_ids.
+
+        patches: [{"caller_id": ..., "callee_id": ...}]
+        - caller is in (tenant, repo, branch) — current crawl
+        - callee may be in any repo in the tenant
+        """
+        count = 0
+        for p in patches:
+            caller_id = p["caller_id"]
+            callee_id = p["callee_id"]
+
+            # Append callee to caller's upstream_ids
+            await self._s.execute(
+                text("""
+                    UPDATE function_branches
+                    SET upstream_ids = upstream_ids || jsonb_build_array(:callee_id::text)
+                    WHERE tenant_id = :tenant_id
+                      AND repo      = :repo
+                      AND branch    = :branch
+                      AND asset_id  = :caller_id
+                      AND NOT upstream_ids @> jsonb_build_array(:callee_id::text)
+                """),
+                {"tenant_id": tenant_id, "repo": repo, "branch": branch,
+                 "caller_id": caller_id, "callee_id": callee_id},
+            )
+
+            # Append caller to callee's downstream_ids (callee may be in any repo)
+            await self._s.execute(
+                text("""
+                    UPDATE function_branches
+                    SET downstream_ids = downstream_ids || jsonb_build_array(:caller_id::text)
+                    WHERE tenant_id = :tenant_id
+                      AND asset_id  = :callee_id
+                      AND NOT downstream_ids @> jsonb_build_array(:caller_id::text)
+                """),
+                {"tenant_id": tenant_id, "callee_id": callee_id, "caller_id": caller_id},
+            )
+            count += 1
+
+        await self._s.flush()
+        return count
+
     # ── Delete ─────────────────────────────────────────────────────────────
 
     async def delete_branch(self, tenant_id: str, repo: str, branch: str) -> int:

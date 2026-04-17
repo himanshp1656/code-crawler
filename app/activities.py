@@ -7,7 +7,7 @@ from typing import Any, Dict
 from temporalio import activity
 
 from .db import get_session_context
-from .lineage_builder import build_lineage
+from .lineage_builder import build_lineage, resolve_unresolved_calls
 from .python_ast_parser import (
     CallInfo,
     ClassDefInfo,
@@ -232,12 +232,25 @@ async def build_lineage_activity(workflow_args: Dict[str, Any]) -> Dict[str, Any
         "build_lineage_activity: building lineage for %d parsed files",
         len(files),
     )
-    lineage_assets = build_lineage(files, workflow_id, run_id)
     repo_url = workflow_args["github_repo_url"]
     branch = workflow_args.get("branch", "main")
     tenant_id = workflow_args.get("tenant_id", "default")
     safe_repo = normalize_repo_name(repo_url)
 
+    # Step 1: build lineage assets + collect unresolved self/super calls
+    lineage_assets, unresolved_calls = build_lineage(files, workflow_id, run_id)
+
+    # Write unresolved calls to file for cross-repo resolution after class lineage is ready
+    unresolved_path = None
+    if unresolved_calls:
+        fd, unresolved_path = tempfile.mkstemp(
+            suffix=".json", prefix="unresolved_calls_", dir=DEFAULT_OUTPUT_DIR
+        )
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(unresolved_calls, f)
+        logger.info("build_lineage_activity: wrote %d unresolved calls to %s", len(unresolved_calls), unresolved_path)
+
+    # Step 2: store assets in DB
     async with get_session_context() as session:
         lineage_repo = LineageRepository(session)
         inserted = await lineage_repo.replace_for_repo_branch(
@@ -251,13 +264,38 @@ async def build_lineage_activity(workflow_args: Dict[str, Any]) -> Dict[str, Any
         )
         await session.commit()
 
-    # Run cross-repo base class resolution across all repos in this tenant.
-    # Runs after every crawl so newly crawled repos can resolve previously
-    # unresolved bases in other repos (and vice versa).
+    # Step 3: resolve cross-repo class hierarchy (base_class_ids now fully resolved)
     async with get_session_context() as session:
         lineage_repo = LineageRepository(session)
         resolved = await lineage_repo.resolve_cross_repo_bases(tenant_id)
         logger.info("build_lineage_activity: cross-repo resolved %d base class links", resolved)
+
+    # Step 4: resolve cross-repo function edges using the now-complete class hierarchy
+    if unresolved_path:
+        try:
+            with open(unresolved_path, "r", encoding="utf-8") as f:
+                unresolved_calls = json.load(f)
+
+            async with get_session_context() as session:
+                lineage_repo = LineageRepository(session)
+                cross_lookup = await lineage_repo.fetch_cross_repo_function_lookup(tenant_id, safe_repo)
+                class_hierarchy = await lineage_repo.fetch_all_class_hierarchy(tenant_id)
+
+            patches = resolve_unresolved_calls(unresolved_calls, cross_lookup, class_hierarchy)
+
+            if patches:
+                async with get_session_context() as session:
+                    lineage_repo = LineageRepository(session)
+                    patched = await lineage_repo.patch_function_edges(tenant_id, safe_repo, branch, patches)
+                    await session.commit()
+                logger.info("build_lineage_activity: patched %d cross-repo function edges", patched)
+        except Exception:
+            logger.warning("build_lineage_activity: cross-repo function edge resolution failed", exc_info=True)
+        finally:
+            try:
+                os.remove(unresolved_path)
+            except OSError:
+                pass
 
     logger.info(
         "build_lineage_activity: stored lineage in Postgres (assets=%s repo=%s branch=%s)",
