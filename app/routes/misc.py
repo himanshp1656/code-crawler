@@ -534,18 +534,57 @@ try:
                 _fn = _candidate
                 break
 
-    # Build mock self — always created, populated from self.* mock_defs
-    _mock_self = MagicMock()
-    for _m in _mock_defs:
-        if not _m["call"].startswith("self."):
-            continue
-        _attr_path = _m["call"][5:]
-        _parts = _attr_path.split(".")
-        _obj2 = _mock_self
-        for _p in _parts[:-1]:
-            _obj2 = getattr(_obj2, _p)
-        _mk = AsyncMock if _m.get("is_async") else MagicMock
-        setattr(_obj2, _parts[-1], _mk(return_value=_m.get("return_value")))
+    _sig = inspect.signature(_fn)
+    _is_method = "self" in _sig.parameters
+    _filtered = {k: v for k, v in _args.items() if k in _sig.parameters and k != "self"}
+
+    # Build self: try to instantiate the real class, fall back to MagicMock
+    _self_obj = None
+    if _is_method:
+        _fn_qualname = getattr(_fn, "__qualname__", "")
+        _real_cls = None
+        if "." in _fn_qualname:
+            _cls_qualname = _fn_qualname.rsplit(".", 1)[0]
+            _real_cls = _mod
+            for _part in _cls_qualname.split("."):
+                _real_cls = getattr(_real_cls, _part, None)
+                if _real_cls is None or not inspect.isclass(_real_cls):
+                    _real_cls = None
+                    break
+        if _real_cls is not None:
+            try:
+                _init_sig = inspect.signature(_real_cls.__init__)
+                _init_kwargs = {}
+                for _pname, _param in _init_sig.parameters.items():
+                    if _pname == "self":
+                        continue
+                    if _param.default is inspect.Parameter.empty and _param.kind in (
+                        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                        inspect.Parameter.KEYWORD_ONLY,
+                    ):
+                        _init_kwargs[_pname] = MagicMock()
+                _self_obj = _real_cls(**_init_kwargs)
+            except Exception:
+                _self_obj = MagicMock()
+        else:
+            _self_obj = MagicMock()
+
+    # Apply only the enabled self.* mocks onto the instance
+    if _self_obj is not None:
+        for _m in _mock_defs:
+            if not _m["call"].startswith("self."):
+                continue
+            _attr_path = _m["call"][5:]
+            _parts = _attr_path.split(".")
+            _obj2 = _self_obj
+            for _p in _parts[:-1]:
+                _nxt = getattr(_obj2, _p, None)
+                if _nxt is None:
+                    _nxt = MagicMock()
+                    setattr(_obj2, _p, _nxt)
+                _obj2 = _nxt
+            _mk = AsyncMock if _m.get("is_async") else MagicMock
+            setattr(_obj2, _parts[-1], _mk(return_value=_m.get("return_value")))
 
     # Patch module-level names for non-self mocks
     for _m in _mock_defs:
@@ -555,18 +594,14 @@ try:
         _mk = AsyncMock if _m.get("is_async") else MagicMock
         setattr(_mod, _name, _mk(return_value=_m.get("return_value")))
 
-    _sig = inspect.signature(_fn)
-    _is_method = "self" in _sig.parameters
-    _filtered = {k: v for k, v in _args.items() if k in _sig.parameters and k != "self"}
-
     if asyncio.iscoroutinefunction(_fn):
         if _is_method:
-            _result = asyncio.run(_fn(_mock_self, **_filtered))
+            _result = asyncio.run(_fn(_self_obj, **_filtered))
         else:
             _result = asyncio.run(_fn(**_filtered))
     else:
         if _is_method:
-            _result = _fn(_mock_self, **_filtered)
+            _result = _fn(_self_obj, **_filtered)
         else:
             _result = _fn(**_filtered)
 
