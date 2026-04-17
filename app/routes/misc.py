@@ -724,10 +724,16 @@ def _run_in_repo_stream(clone_dir, venv_dir, file_path, func_name, args, edited_
         for pkg_file in ("pyproject.toml", "setup.py", "setup.cfg"):
             if os.path.isfile(os.path.join(clone_dir, pkg_file)):
                 emit(f"Installing package ({pkg_file})...")
-                if _UV:
-                    r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-e", ".[all]"], capture_output=True, cwd=clone_dir)
+                if _UV and pkg_file == "pyproject.toml":
+                    # Try uv sync (respects lockfile, installs all extras/groups)
+                    r = subprocess.run([_UV, "sync", "--all-extras", "--all-groups", "--python", python_bin], capture_output=True, cwd=clone_dir)
+                    if r.returncode != 0:
+                        # fallback to uv pip install
+                        r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-e", ".[all]"], capture_output=True, cwd=clone_dir)
                     if r.returncode != 0:
                         r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-e", "."], capture_output=True, cwd=clone_dir)
+                elif _UV:
+                    r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-e", "."], capture_output=True, cwd=clone_dir)
                 else:
                     r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".[all]", "-q"], capture_output=True, cwd=clone_dir)
                     if r.returncode != 0:
