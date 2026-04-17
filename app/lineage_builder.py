@@ -375,6 +375,7 @@ def build_lineage(
     files: Dict[str, FileParseResult],
     workflow_id: str,
     run_id: str,
+    cross_repo_stubs: Optional[List[dict]] = None,
 ) -> List[dict]:
     """
     Build the full lineage graph — functions AND classes — as a flat list of assets.
@@ -394,6 +395,47 @@ def build_lineage(
     import_maps = _build_import_maps(files)
     star_imports = _build_star_imports(files)
     method_index = _build_method_index(func_index)
+
+    # --- Augment indexes with cross-repo stubs (for self/super resolution) ---
+    # Stubs are added to indexes only — they never appear in the returned assets.
+    cross_repo_ids: set = set()
+    if cross_repo_stubs:
+        for a in cross_repo_stubs:
+            cross_repo_ids.add(a["id"])
+            if a["node_type"] == "function":
+                short_name = a["name"].rsplit(".", 1)[-1]
+                cid = a.get("class_id")
+                cname = cid.split(":")[-1] if cid and ":" in cid else cid
+                fn = FunctionDefInfo(
+                    id=a["id"],
+                    name=short_name,
+                    qualname=a["name"],
+                    file=a.get("file") or "",
+                    lineno=0,
+                    col_offset=0,
+                    class_id=cid,
+                    class_name=cname,
+                )
+                func_index[fn.id] = fn
+                name_index.setdefault(fn.name, []).append(fn)
+                if cid:
+                    method_index.setdefault(cid, {}).setdefault(fn.name, []).append(fn.id)
+            elif a["node_type"] == "class":
+                short_name = a["name"].rsplit(".", 1)[-1]
+                # Use resolved base_class_ids as base_classes — _resolve_class finds them
+                # directly via class_index because they ARE the class IDs.
+                cls = ClassDefInfo(
+                    id=a["id"],
+                    name=short_name,
+                    qualname=a["name"],
+                    file=a.get("file") or "",
+                    lineno=0,
+                    col_offset=0,
+                    base_classes=a.get("base_class_ids") or [],
+                )
+                class_index[cls.id] = cls
+                class_name_index.setdefault(cls.name, []).append(cls)
+        logger.info("build_lineage: augmented indexes with %d cross-repo stubs", len(cross_repo_stubs))
 
     assets: Dict[str, dict] = {}
     downstream_sets: Dict[str, set] = {}
@@ -439,8 +481,10 @@ def build_lineage(
                 "module_context": fr.module_context,
             }
 
-    # --- Function assets ---
+    # --- Function assets (current repo only — skip cross-repo stubs) ---
     for fn in func_index.values():
+        if fn.id in cross_repo_ids:
+            continue
         fr = file_results_by_path.get(fn.file)
         assets[fn.id] = {
             "id": fn.id,
