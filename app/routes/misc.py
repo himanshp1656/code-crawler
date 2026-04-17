@@ -66,6 +66,7 @@ class RunInRepoRequest(BaseModel):
     args: Dict[str, Any] = {}
     edited_source: Optional[str] = None
     mock_definitions: list = []
+    pip_packages: list = []
 
 
 class SaveTestCaseRequest(BaseModel):
@@ -493,7 +494,7 @@ def _extract_json(text: str) -> dict:
     return json.loads(text)
 
 
-def _run_in_repo(clone_dir, venv_dir, file_path, func_name, args, edited_source=None, mock_definitions=None):
+def _run_in_repo(clone_dir, venv_dir, file_path, func_name, args, edited_source=None, mock_definitions=None, pip_packages=None):
     import importlib.util
     _REPO_RUNNER_SCRIPT = r"""
 import sys, json, io, asyncio, importlib, inspect
@@ -590,6 +591,13 @@ except Exception as _e:
         subprocess.run([sys.executable, "-m", "venv", venv_dir], capture_output=True)
         if os.path.isfile(req_file):
             subprocess.run([python_bin, "-m", "pip", "install", "-r", req_file, "-q"], capture_output=True)
+
+    # Install any extra packages the user requested
+    if pip_packages:
+        subprocess.run(
+            [python_bin, "-m", "pip", "install", "-q", *pip_packages],
+            capture_output=True, cwd=clone_dir,
+        )
 
     payload = json.dumps({"args": args, "module": module, "func": func_name, "edited_source": edited_source, "mock_definitions": mock_definitions or []})
     try:
@@ -802,7 +810,7 @@ async def run_in_repo_endpoint(
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
         _REPO_EXECUTOR,
-        lambda: _run_in_repo(clone_dir, venv_dir, file_path, func_name, body.args, body.edited_source, body.mock_definitions),
+        lambda: _run_in_repo(clone_dir, venv_dir, file_path, func_name, body.args, body.edited_source, body.mock_definitions, body.pip_packages),
     )
     return result
 
