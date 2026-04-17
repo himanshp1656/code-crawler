@@ -5,13 +5,16 @@ import asyncio
 import json
 import math as _math
 import os
+import queue
 import re
 import subprocess
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -661,6 +664,56 @@ except Exception as _e:
         return {"ok": False, "error": str(exc), "stdout": ""}
 
 
+def _run_in_repo_stream(clone_dir, venv_dir, file_path, func_name, args, edited_source, mock_definitions, pip_packages, q):
+    """Same as _run_in_repo but pushes NDJSON lines into queue q for streaming."""
+    def emit(msg):
+        q.put(json.dumps({"type": "progress", "message": msg}) + "\n")
+
+    parts = file_path.replace("\\", "/").split("/")
+    module = ".".join(p for p in parts if p).replace(".py", "")
+    python_bin = os.path.join(venv_dir, "bin", "python") if os.path.isdir(venv_dir) else sys.executable
+    sentinel = os.path.join(venv_dir, ".deps_installed")
+
+    if not os.path.isfile(sentinel):
+        if not os.path.isdir(venv_dir):
+            emit("Creating virtual environment...")
+            subprocess.run([sys.executable, "-m", "venv", venv_dir], capture_output=True)
+            python_bin = os.path.join(venv_dir, "bin", "python")
+        req_file = os.path.join(clone_dir, "requirements.txt")
+        if os.path.isfile(req_file):
+            emit("Installing requirements.txt...")
+            subprocess.run([python_bin, "-m", "pip", "install", "-r", req_file, "-q"], capture_output=True)
+        for pkg_file in ("pyproject.toml", "setup.py", "setup.cfg"):
+            if os.path.isfile(os.path.join(clone_dir, pkg_file)):
+                emit(f"Installing package ({pkg_file})...")
+                subprocess.run([python_bin, "-m", "pip", "install", "-e", ".", "-q"], capture_output=True, cwd=clone_dir)
+                break
+        open(sentinel, "w").close()
+
+    if pip_packages:
+        emit(f"Installing {', '.join(pip_packages)}...")
+        subprocess.run([python_bin, "-m", "pip", "install", "-q", *pip_packages], capture_output=True, cwd=clone_dir)
+
+    emit("Running function...")
+    payload = json.dumps({"args": args, "module": module, "func": func_name, "edited_source": edited_source, "mock_definitions": mock_definitions or []})
+    try:
+        proc = subprocess.run(
+            [python_bin, "-c", _REPO_RUNNER_SCRIPT],
+            input=payload, capture_output=True, text=True, timeout=15,
+            cwd=clone_dir,
+            env={**os.environ, "PYTHONPATH": clone_dir},
+        )
+        out = proc.stdout.strip()
+        result = json.loads(out) if out else {"ok": False, "error": proc.stderr.strip() or "No output", "stdout": ""}
+    except subprocess.TimeoutExpired:
+        result = {"ok": False, "error": "Execution timed out (15s limit)", "stdout": ""}
+    except Exception as exc:
+        result = {"ok": False, "error": str(exc), "stdout": ""}
+
+    q.put(json.dumps({"type": "result", **result}) + "\n")
+    q.put(None)  # sentinel
+
+
 def _deep_equal(a, b) -> bool:
     if isinstance(a, dict) and isinstance(b, dict):
         return set(a.keys()) == set(b.keys()) and all(_deep_equal(a[k], b[k]) for k in a)
@@ -851,12 +904,22 @@ async def run_in_repo_endpoint(
         return {"ok": False, "error": "Repository not cloned yet. Run the crawler first.", "stdout": ""}
 
     venv_dir = os.path.abspath(os.path.join("output", "venvs", f"{safe_repo}-{body.branch}"))
+    progress_q: queue.Queue = queue.Queue()
+    threading.Thread(
+        target=_run_in_repo_stream,
+        args=(clone_dir, venv_dir, file_path, func_name, body.args, body.edited_source, body.mock_definitions, body.pip_packages, progress_q),
+        daemon=True,
+    ).start()
     loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(
-        _REPO_EXECUTOR,
-        lambda: _run_in_repo(clone_dir, venv_dir, file_path, func_name, body.args, body.edited_source, body.mock_definitions, body.pip_packages),
-    )
-    return result
+
+    async def generate():
+        while True:
+            line = await loop.run_in_executor(None, progress_q.get)
+            if line is None:
+                break
+            yield line
+
+    return StreamingResponse(generate(), media_type="application/x-ndjson")
 
 
 # ── Test cases ─────────────────────────────────────────────────────────────────
