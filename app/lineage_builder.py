@@ -114,6 +114,30 @@ def _resolve_callee(
             return candidates[0].id
         return None
 
+    def collect_ancestor_names(start_class_id: str) -> set:
+        """Walk base_classes fields (even unresolved) to collect all ancestor simple names."""
+        names: set = set()
+        queue = [start_class_id]
+        visited: set = set()
+        while queue:
+            cid = queue.pop(0)
+            if cid in visited:
+                continue
+            visited.add(cid)
+            cls_info = class_index.get(cid)
+            if not cls_info:
+                continue
+            cls_file = cls_info.file or file_result.path
+            for base_name in cls_info.base_classes:
+                simple = base_name.rsplit(".", 1)[-1]
+                names.add(simple)
+                parent_id = _resolve_class(
+                    base_name, cls_file, import_maps, class_index, class_name_index,
+                )
+                if parent_id and parent_id not in visited:
+                    queue.append(parent_id)
+        return names
+
     def resolve_method_in_hierarchy(start_class_id: str, method_name: str) -> Optional[str]:
         """BFS through the inheritance chain (including cross-repo bases) to find a method."""
         queue = [start_class_id]
@@ -129,7 +153,6 @@ def _resolve_callee(
             cls_info = class_index.get(cid)
             if cls_info:
                 # Use the file where THIS class is defined, not the original call site.
-                # e.g. when resolving App from BaseMetadataExtractor, use base_me...py's imports.
                 cls_file = cls_info.file or file_result.path
                 for base_name in cls_info.base_classes:
                     parent_id = _resolve_class(
@@ -140,6 +163,23 @@ def _resolve_callee(
                         queue.append(parent_id)
         return None
 
+    def resolve_via_ancestor_names(start_class_id: str, method_name: str) -> Optional[str]:
+        """Fallback: filter name_index candidates by ancestor class names.
+
+        Handles the case where BFS can't fully resolve a parent (e.g. 'App' is
+        ambiguous), but the correct method is uniquely named within the known
+        ancestor class names.
+        """
+        ancestor_names = collect_ancestor_names(start_class_id)
+        own_info = class_index.get(start_class_id)
+        if own_info:
+            ancestor_names.add(own_info.name)
+        candidates = name_index.get(method_name, [])
+        matches = [fn for fn in candidates if fn.class_name and fn.class_name in ancestor_names]
+        if len(matches) == 1:
+            return matches[0].id
+        return None
+
     parts = expr.split(".")
 
     # ── Case 0: self.method() / cls.method() — walk full inheritance chain ──
@@ -148,6 +188,11 @@ def _resolve_callee(
         caller = func_index.get(call.caller_id)
         if caller and caller.class_id:
             resolved = resolve_method_in_hierarchy(caller.class_id, method_name)
+            if resolved:
+                return resolved
+            # BFS may fail when a parent class name is ambiguous (e.g. "App").
+            # Fall back to filtering name_index by known ancestor class names.
+            resolved = resolve_via_ancestor_names(caller.class_id, method_name)
             if resolved:
                 return resolved
         # Last resort: unique global name
@@ -180,10 +225,14 @@ def _resolve_callee(
                         resolved = resolve_method_in_hierarchy(parent_id, method_name)
                         if resolved:
                             return resolved
-                    # Cross-repo: parent not in our index — try global name match
-                    candidates = name_index.get(method_name, [])
-                    if len(candidates) == 1:
-                        return candidates[0].id
+            # BFS may fail due to ambiguous parent names — try ancestor-name filter.
+            resolved = resolve_via_ancestor_names(caller.class_id, method_name)
+            if resolved:
+                return resolved
+            # Last resort: unique global name
+            candidates = name_index.get(method_name, [])
+            if len(candidates) == 1:
+                return candidates[0].id
         return None
 
     # ── Case 1: simple name "foo" ────────────────────────────────────────────
