@@ -42,16 +42,19 @@ async def insert_crawl_job(
     branch: str,
     triggered_by: str,
 ) -> None:
-    job = CrawlJob(
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    stmt = pg_insert(CrawlJob).values(
         tenant_id=tenant_id,
         user_id=user_id,
         workflow_id=workflow_id,
         repo=repo,
         branch=branch,
         triggered_by=triggered_by,
+    ).on_conflict_do_update(
+        index_elements=["workflow_id"],
+        set_={"triggered_by": triggered_by, "user_id": user_id},
     )
-    session.add(job)
-    await session.flush()
+    await session.execute(stmt)
 
 
 @router.get("")

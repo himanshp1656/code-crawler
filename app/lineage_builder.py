@@ -177,10 +177,7 @@ def _resolve_callee(
                         resolved = resolve_method_in_hierarchy(parent_id, method_name)
                         if resolved:
                             return resolved
-                    # Cross-repo: parent not in our index — try global name match
-                    candidates = name_index.get(method_name, [])
-                    if len(candidates) == 1:
-                        return candidates[0].id
+                    # If parent is cross-repo, return None so the cross-repo resolver handles it
         return None
 
     # ── Case 1: simple name "foo" ────────────────────────────────────────────

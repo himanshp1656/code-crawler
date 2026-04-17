@@ -591,12 +591,12 @@ class LineageRepository:
             await self._s.execute(
                 text("""
                     UPDATE function_branches
-                    SET upstream_ids = upstream_ids || jsonb_build_array(:callee_id::text)
+                    SET upstream_ids = upstream_ids || jsonb_build_array(CAST(:callee_id AS TEXT))
                     WHERE tenant_id = :tenant_id
                       AND repo      = :repo
                       AND branch    = :branch
                       AND asset_id  = :caller_id
-                      AND NOT upstream_ids @> jsonb_build_array(:callee_id::text)
+                      AND NOT upstream_ids @> jsonb_build_array(CAST(:callee_id AS TEXT))
                 """),
                 {"tenant_id": tenant_id, "repo": repo, "branch": branch,
                  "caller_id": caller_id, "callee_id": callee_id},
@@ -606,10 +606,10 @@ class LineageRepository:
             await self._s.execute(
                 text("""
                     UPDATE function_branches
-                    SET downstream_ids = downstream_ids || jsonb_build_array(:caller_id::text)
+                    SET downstream_ids = downstream_ids || jsonb_build_array(CAST(:caller_id AS TEXT))
                     WHERE tenant_id = :tenant_id
                       AND asset_id  = :callee_id
-                      AND NOT downstream_ids @> jsonb_build_array(:caller_id::text)
+                      AND NOT downstream_ids @> jsonb_build_array(CAST(:caller_id AS TEXT))
                 """),
                 {"tenant_id": tenant_id, "callee_id": callee_id, "caller_id": caller_id},
             )
@@ -771,6 +771,8 @@ class LineageRepository:
         result = await self._s.execute(
             select(
                 FunctionBranch.asset_id,
+                FunctionBranch.repo,
+                FunctionBranch.branch,
                 FunctionDef.node_type,
                 FunctionDef.name,
                 FunctionDef.file_path,
@@ -787,10 +789,14 @@ class LineageRepository:
             .join(FunctionDef, _join)
             .where(
                 FunctionBranch.tenant_id == tenant_id,
-                FunctionBranch.repo == repo,
-                FunctionBranch.branch == branch,
                 FunctionBranch.asset_id == asset_id,
             )
+            .order_by(
+                # Prefer the exact repo+branch the caller came from
+                (FunctionBranch.repo == repo).desc(),
+                (FunctionBranch.branch == branch).desc(),
+            )
+            .limit(1)
         )
         row = result.one_or_none()
         if not row:
@@ -798,6 +804,8 @@ class LineageRepository:
 
         node = {
             "id": row.asset_id,
+            "repo": row.repo,
+            "branch": row.branch,
             "node_type": row.node_type,
             "name": row.name,
             "file": row.file_path,
@@ -822,6 +830,8 @@ class LineageRepository:
                 fn_result = await self._s.execute(
                     select(
                         FunctionBranch.asset_id,
+                        FunctionBranch.repo,
+                        FunctionBranch.branch,
                         FunctionDef.node_type,
                         FunctionDef.name,
                         FunctionDef.file_path,
@@ -835,14 +845,14 @@ class LineageRepository:
                     .join(FunctionDef, _join)
                     .where(
                         FunctionBranch.tenant_id == tenant_id,
-                        FunctionBranch.repo == repo,
-                        FunctionBranch.branch == branch,
                         FunctionBranch.asset_id.in_(all_fn_neighbor_ids),
                     )
                 )
                 fn_map = {
                     r.asset_id: {
                         "id": r.asset_id,
+                        "repo": r.repo,
+                        "branch": r.branch,
                         "node_type": r.node_type,
                         "name": r.name,
                         "file": r.file_path,
