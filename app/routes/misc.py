@@ -712,19 +712,23 @@ def _run_in_repo_stream(clone_dir, venv_dir, file_path, func_name, args, edited_
             else:
                 subprocess.run([sys.executable, "-m", "venv", venv_dir], capture_output=True)
             python_bin = os.path.join(venv_dir, "bin", "python")
+        # env that points uv to our venv regardless of project defaults
+        _uv_env = {**os.environ,
+                   "VIRTUAL_ENV": venv_dir,
+                   "UV_PROJECT_ENVIRONMENT": venv_dir,
+                   "PATH": f"{os.path.join(venv_dir, 'bin')}:{os.environ.get('PATH', '')}"}
         if install_cmd:
             emit(f"Running: {install_cmd}")
-            r = subprocess.run(install_cmd, shell=True, capture_output=True, cwd=clone_dir,
-                               env={**os.environ, "VIRTUAL_ENV": venv_dir, "PATH": f"{os.path.join(venv_dir, 'bin')}:{os.environ.get('PATH', '')}"})
+            r = subprocess.run(install_cmd, shell=True, capture_output=True, cwd=clone_dir, env=_uv_env)
             if r.returncode != 0:
                 install_ok = False
-                emit(f"Warning: install command had errors — {r.stderr.decode()[:200]}")
+                emit(f"Warning: install command had errors — {r.stderr.decode()[:300]}")
         else:
             req_file = os.path.join(clone_dir, "requirements.txt")
             if os.path.isfile(req_file):
                 emit("Installing requirements.txt...")
                 if _UV:
-                    r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-r", req_file], capture_output=True)
+                    r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-r", req_file], capture_output=True, env=_uv_env)
                 else:
                     r = subprocess.run([python_bin, "-m", "pip", "install", "-r", req_file, "-q"], capture_output=True)
                 if r.returncode != 0:
@@ -734,20 +738,20 @@ def _run_in_repo_stream(clone_dir, venv_dir, file_path, func_name, args, edited_
                 if os.path.isfile(os.path.join(clone_dir, pkg_file)):
                     emit(f"Installing package ({pkg_file})...")
                     if _UV and pkg_file == "pyproject.toml":
-                        r = subprocess.run([_UV, "sync", "--all-extras", "--all-groups", "--python", python_bin], capture_output=True, cwd=clone_dir)
+                        r = subprocess.run([_UV, "sync", "--all-extras", "--all-groups"], capture_output=True, cwd=clone_dir, env=_uv_env)
                         if r.returncode != 0:
-                            r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-e", ".[all]"], capture_output=True, cwd=clone_dir)
+                            r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-e", ".[all]"], capture_output=True, cwd=clone_dir, env=_uv_env)
                         if r.returncode != 0:
-                            r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-e", "."], capture_output=True, cwd=clone_dir)
+                            r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-e", "."], capture_output=True, cwd=clone_dir, env=_uv_env)
                     elif _UV:
-                        r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-e", "."], capture_output=True, cwd=clone_dir)
+                        r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-e", "."], capture_output=True, cwd=clone_dir, env=_uv_env)
                     else:
                         r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".[all]", "-q"], capture_output=True, cwd=clone_dir)
                         if r.returncode != 0:
                             r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".", "-q"], capture_output=True, cwd=clone_dir)
                     if r.returncode != 0:
                         install_ok = False
-                        emit("Warning: package install had errors")
+                        emit(f"Warning: package install had errors — {r.stderr.decode()[:300]}")
                     break
         if install_ok:
             open(sentinel, "w").close()
