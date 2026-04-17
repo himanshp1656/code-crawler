@@ -70,6 +70,7 @@ class RunInRepoRequest(BaseModel):
     edited_source: Optional[str] = None
     mock_definitions: list = []
     pip_packages: list = []
+    force_reinstall: bool = False
 
 
 class SaveTestCaseRequest(BaseModel):
@@ -628,18 +629,23 @@ def _run_in_repo(clone_dir, venv_dir, file_path, func_name, args, edited_source=
 
     # Create venv and install deps if not yet done
     if not os.path.isfile(sentinel):
+        install_ok = True
         if not os.path.isdir(venv_dir):
             subprocess.run([sys.executable, "-m", "venv", venv_dir], capture_output=True)
         req_file = os.path.join(clone_dir, "requirements.txt")
         if os.path.isfile(req_file):
-            subprocess.run([python_bin, "-m", "pip", "install", "-r", req_file, "-q"], capture_output=True)
-        # Install the repo itself + all its declared dependencies
+            r = subprocess.run([python_bin, "-m", "pip", "install", "-r", req_file, "-q"], capture_output=True)
+            if r.returncode != 0:
+                install_ok = False
         for pkg_file in ("pyproject.toml", "setup.py", "setup.cfg"):
             if os.path.isfile(os.path.join(clone_dir, pkg_file)):
-                subprocess.run([python_bin, "-m", "pip", "install", "-e", ".", "-q"],
-                               capture_output=True, cwd=clone_dir)
+                r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".", "-q"],
+                                   capture_output=True, cwd=clone_dir)
+                if r.returncode != 0:
+                    install_ok = False
                 break
-        open(sentinel, "w").close()
+        if install_ok:
+            open(sentinel, "w").close()
 
     # Install any extra packages the user requested
     if pip_packages:
@@ -666,7 +672,7 @@ def _run_in_repo(clone_dir, venv_dir, file_path, func_name, args, edited_source=
         return {"ok": False, "error": str(exc), "stdout": ""}
 
 
-def _run_in_repo_stream(clone_dir, venv_dir, file_path, func_name, args, edited_source, mock_definitions, pip_packages, q):
+def _run_in_repo_stream(clone_dir, venv_dir, file_path, func_name, args, edited_source, mock_definitions, pip_packages, q, force_reinstall=False):
     """Same as _run_in_repo but pushes NDJSON lines into queue q for streaming."""
     def emit(msg):
         q.put(json.dumps({"type": "progress", "message": msg}) + "\n")
@@ -676,7 +682,12 @@ def _run_in_repo_stream(clone_dir, venv_dir, file_path, func_name, args, edited_
     python_bin = os.path.join(venv_dir, "bin", "python") if os.path.isdir(venv_dir) else sys.executable
     sentinel = os.path.join(venv_dir, ".deps_installed")
 
+    if force_reinstall and os.path.isfile(sentinel):
+        os.remove(sentinel)
+        emit("Reinstalling dependencies...")
+
     if not os.path.isfile(sentinel):
+        install_ok = True
         if not os.path.isdir(venv_dir):
             emit("Creating virtual environment...")
             subprocess.run([sys.executable, "-m", "venv", venv_dir], capture_output=True)
@@ -684,13 +695,20 @@ def _run_in_repo_stream(clone_dir, venv_dir, file_path, func_name, args, edited_
         req_file = os.path.join(clone_dir, "requirements.txt")
         if os.path.isfile(req_file):
             emit("Installing requirements.txt...")
-            subprocess.run([python_bin, "-m", "pip", "install", "-r", req_file, "-q"], capture_output=True)
+            r = subprocess.run([python_bin, "-m", "pip", "install", "-r", req_file, "-q"], capture_output=True)
+            if r.returncode != 0:
+                install_ok = False
+                emit(f"Warning: requirements.txt install had errors")
         for pkg_file in ("pyproject.toml", "setup.py", "setup.cfg"):
             if os.path.isfile(os.path.join(clone_dir, pkg_file)):
                 emit(f"Installing package ({pkg_file})...")
-                subprocess.run([python_bin, "-m", "pip", "install", "-e", ".", "-q"], capture_output=True, cwd=clone_dir)
+                r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".", "-q"], capture_output=True, cwd=clone_dir)
+                if r.returncode != 0:
+                    install_ok = False
+                    emit(f"Warning: package install had errors")
                 break
-        open(sentinel, "w").close()
+        if install_ok:
+            open(sentinel, "w").close()
 
     if pip_packages:
         emit(f"Installing {', '.join(pip_packages)}...")
@@ -909,7 +927,7 @@ async def run_in_repo_endpoint(
     progress_q: queue.Queue = queue.Queue()
     threading.Thread(
         target=_run_in_repo_stream,
-        args=(clone_dir, venv_dir, file_path, func_name, body.args, body.edited_source, body.mock_definitions, body.pip_packages, progress_q),
+        args=(clone_dir, venv_dir, file_path, func_name, body.args, body.edited_source, body.mock_definitions, body.pip_packages, progress_q, body.force_reinstall),
         daemon=True,
     ).start()
     loop = asyncio.get_running_loop()
