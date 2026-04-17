@@ -738,17 +738,31 @@ def _run_in_repo_stream(clone_dir, venv_dir, file_path, func_name, args, edited_
                 if os.path.isfile(os.path.join(clone_dir, pkg_file)):
                     emit(f"Installing package ({pkg_file})...")
                     if _UV and pkg_file == "pyproject.toml":
-                        r = subprocess.run([_UV, "sync", "--all-extras", "--all-groups"], capture_output=True, cwd=clone_dir, env=_uv_env)
-                        if r.returncode != 0:
-                            r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-e", ".[all]"], capture_output=True, cwd=clone_dir, env=_uv_env)
+                        # Read all extras from pyproject.toml and install them explicitly
+                        try:
+                            import tomllib
+                        except ImportError:
+                            try:
+                                import tomli as tomllib
+                            except ImportError:
+                                tomllib = None
+                        extras = []
+                        if tomllib:
+                            try:
+                                with open(os.path.join(clone_dir, "pyproject.toml"), "rb") as _f:
+                                    _toml = tomllib.load(_f)
+                                extras = list(_toml.get("project", {}).get("optional-dependencies", {}).keys())
+                            except Exception:
+                                pass
+                        extras_str = f".[{','.join(extras)}]" if extras else "."
+                        emit(f"Installing extras: {', '.join(extras) if extras else 'none'}...")
+                        r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-e", extras_str], capture_output=True, cwd=clone_dir, env=_uv_env)
                         if r.returncode != 0:
                             r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-e", "."], capture_output=True, cwd=clone_dir, env=_uv_env)
                     elif _UV:
                         r = subprocess.run([_UV, "pip", "install", "--python", python_bin, "-e", "."], capture_output=True, cwd=clone_dir, env=_uv_env)
                     else:
-                        r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".[all]", "-q"], capture_output=True, cwd=clone_dir)
-                        if r.returncode != 0:
-                            r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".", "-q"], capture_output=True, cwd=clone_dir)
+                        r = subprocess.run([python_bin, "-m", "pip", "install", "-e", ".", "-q"], capture_output=True, cwd=clone_dir)
                     if r.returncode != 0:
                         install_ok = False
                         emit(f"Warning: package install had errors — {r.stderr.decode()[:300]}")
