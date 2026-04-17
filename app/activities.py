@@ -292,7 +292,10 @@ async def build_lineage_activity(workflow_args: Dict[str, Any]) -> Dict[str, Any
         except Exception:
             logger.warning("build_lineage_activity: cross-repo function edge resolution failed", exc_info=True)
         finally:
-            pass  # intentionally keeping unresolved_calls file for debugging
+            try:
+                os.remove(unresolved_path)
+            except OSError:
+                pass
 
     logger.info(
         "build_lineage_activity: stored lineage in Postgres (assets=%s repo=%s branch=%s)",
