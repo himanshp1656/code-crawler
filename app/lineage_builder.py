@@ -90,6 +90,20 @@ def _build_method_index(func_index: Dict[str, FunctionDefInfo]) -> Dict[str, Dic
 # Resolvers
 # ---------------------------------------------------------------------------
 
+def _callee_imported_in(
+    fn: FunctionDefInfo,
+    imports_for_file: Dict[str, str],
+    caller_file: str,
+) -> bool:
+    """Return True if fn is in the same file OR its module is reachable via an import."""
+    if fn.file == caller_file:
+        return True
+    for target in imports_for_file.values():
+        if fn.qualname.startswith(target):
+            return True
+    return False
+
+
 def _resolve_callee(
     call: CallInfo,
     file_result: FileParseResult,
@@ -147,9 +161,9 @@ def _resolve_callee(
             resolved = resolve_method_in_hierarchy(caller.class_id, method_name)
             if resolved:
                 return resolved
-        # Last resort: unique global name
+        # Last resort: unique global name — only if the file imports from that module
         candidates = name_index.get(method_name, [])
-        if len(candidates) == 1:
+        if len(candidates) == 1 and _callee_imported_in(candidates[0], imports_for_file, file_result.path):
             return candidates[0].id
         return None
 
@@ -157,7 +171,7 @@ def _resolve_callee(
     if parts[0] in ("self", "cls") and len(parts) >= 3:
         short = parts[-1]
         candidates = name_index.get(short, [])
-        if len(candidates) == 1:
+        if len(candidates) == 1 and _callee_imported_in(candidates[0], imports_for_file, file_result.path):
             return candidates[0].id
         return None
 
@@ -203,9 +217,9 @@ def _resolve_callee(
         if len(same_file) == 1:
             return same_file[0].id
 
-        # Unique across project
+        # Unique across project — only if the file imports from that module
         candidates = name_index.get(expr, [])
-        if len(candidates) == 1:
+        if len(candidates) == 1 and _callee_imported_in(candidates[0], imports_for_file, file_result.path):
             return candidates[0].id
 
         # Disambiguation: prefer same module
@@ -248,10 +262,10 @@ def _resolve_callee(
         if resolved:
             return resolved
 
-    # Fallback: treat last segment as short name with same-file preference
+    # Fallback: treat last segment as short name — only if imported or same file
     short = parts[-1]
     candidates = name_index.get(short, [])
-    if len(candidates) == 1:
+    if len(candidates) == 1 and _callee_imported_in(candidates[0], imports_for_file, file_result.path):
         return candidates[0].id
     if candidates:
         same_file = [fn for fn in candidates if fn.file == file_result.path]
