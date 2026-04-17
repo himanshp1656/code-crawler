@@ -584,13 +584,22 @@ except Exception as _e:
     module = ".".join(p for p in parts if p).replace(".py", "")
 
     python_bin = os.path.join(venv_dir, "bin", "python") if os.path.isdir(venv_dir) else sys.executable
+    sentinel = os.path.join(venv_dir, ".deps_installed")
 
-    # Install deps if venv doesn't exist yet
-    if not os.path.isdir(venv_dir):
+    # Create venv and install deps if not yet done
+    if not os.path.isfile(sentinel):
+        if not os.path.isdir(venv_dir):
+            subprocess.run([sys.executable, "-m", "venv", venv_dir], capture_output=True)
         req_file = os.path.join(clone_dir, "requirements.txt")
-        subprocess.run([sys.executable, "-m", "venv", venv_dir], capture_output=True)
         if os.path.isfile(req_file):
             subprocess.run([python_bin, "-m", "pip", "install", "-r", req_file, "-q"], capture_output=True)
+        # Install the repo itself if it's a package (pyproject.toml or setup.py)
+        for pkg_file in ("pyproject.toml", "setup.py", "setup.cfg"):
+            if os.path.isfile(os.path.join(clone_dir, pkg_file)):
+                subprocess.run([python_bin, "-m", "pip", "install", "-e", ".", "-q"],
+                               capture_output=True, cwd=clone_dir)
+                break
+        open(sentinel, "w").close()
 
     # Install any extra packages the user requested
     if pip_packages:
