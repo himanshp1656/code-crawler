@@ -232,28 +232,11 @@ async def build_lineage_activity(workflow_args: Dict[str, Any]) -> Dict[str, Any
         "build_lineage_activity: building lineage for %d parsed files",
         len(files),
     )
+    lineage_assets = build_lineage(files, workflow_id, run_id)
     repo_url = workflow_args["github_repo_url"]
     branch = workflow_args.get("branch", "main")
     tenant_id = workflow_args.get("tenant_id", "default")
     safe_repo = normalize_repo_name(repo_url)
-
-    # Load function/class stubs from other already-crawled repos so that
-    # cross-repo self.method() / super().method() calls can be resolved.
-    cross_repo_stubs = []
-    try:
-        async with get_session_context() as session:
-            lineage_repo = LineageRepository(session)
-            cross_repo_stubs = await lineage_repo.fetch_cross_repo_stubs(
-                tenant_id, exclude_repo=safe_repo
-            )
-        logger.info(
-            "build_lineage_activity: loaded %d cross-repo stubs for resolution",
-            len(cross_repo_stubs),
-        )
-    except Exception:
-        logger.warning("build_lineage_activity: failed to load cross-repo stubs, continuing without")
-
-    lineage_assets = build_lineage(files, workflow_id, run_id, cross_repo_stubs=cross_repo_stubs)
 
     async with get_session_context() as session:
         lineage_repo = LineageRepository(session)

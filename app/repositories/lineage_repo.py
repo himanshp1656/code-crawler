@@ -496,62 +496,6 @@ class LineageRepository:
         await self._s.commit()
         return resolved_count
 
-    # ── Cross-repo function/class stubs for lineage resolution ────────────
-
-    async def fetch_cross_repo_stubs(
-        self, tenant_id: str, exclude_repo: str
-    ) -> List[Dict[str, Any]]:
-        """Return function/class stubs from other repos (default branches only).
-
-        Used during build_lineage to augment indexes so that self.method() /
-        super().method() calls can be resolved across repo boundaries.
-        """
-        try:
-            settings_result = await self._s.execute(
-                select(RepoSettings.repo, RepoSettings.default_branch)
-                .where(RepoSettings.tenant_id == tenant_id)
-            )
-            default_branches = {r: b for r, b in settings_result.all()}
-        except Exception:
-            return []
-
-        other_repos = {r: b for r, b in default_branches.items() if r != exclude_repo}
-        if not other_repos:
-            return []
-
-        from sqlalchemy import and_
-        conditions = [
-            and_(FunctionBranch.repo == r, FunctionBranch.branch == b)
-            for r, b in other_repos.items()
-        ]
-
-        result = await self._s.execute(
-            select(
-                FunctionBranch.asset_id,
-                FunctionDef.node_type,
-                FunctionDef.name,
-                FunctionDef.file_path,
-                FunctionDef.class_id,
-                FunctionBranch.base_class_ids,
-            )
-            .join(FunctionDef, FunctionBranch.def_id == FunctionDef.id)
-            .where(
-                FunctionBranch.tenant_id == tenant_id,
-                or_(*conditions),
-            )
-        )
-        return [
-            {
-                "id": r.asset_id,
-                "node_type": r.node_type,
-                "name": r.name,           # qualname as stored
-                "file": r.file_path or "",
-                "class_id": r.class_id,
-                "base_class_ids": r.base_class_ids or [],
-            }
-            for r in result.all()
-        ]
-
     # ── Delete ─────────────────────────────────────────────────────────────
 
     async def delete_branch(self, tenant_id: str, repo: str, branch: str) -> int:
