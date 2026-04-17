@@ -128,12 +128,9 @@ def _resolve_callee(
                 return ids[0]
             cls_info = class_index.get(cid)
             if cls_info:
-                # Use the file where THIS class is defined, not the original call site.
-                # e.g. when resolving App from BaseMetadataExtractor, use base_me...py's imports.
-                cls_file = cls_info.file or file_result.path
                 for base_name in cls_info.base_classes:
                     parent_id = _resolve_class(
-                        base_name, cls_file, import_maps,
+                        base_name, file_result.path, import_maps,
                         class_index, class_name_index,
                     )
                     if parent_id and parent_id not in visited:
