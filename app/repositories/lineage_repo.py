@@ -900,9 +900,8 @@ class LineageRepository:
                 for r in methods_result.all()
             ]
 
-            # Class neighbors (call edges + inheritance) in one query
+            # Class neighbors — inheritance only (no call edges at class level)
             parent_ids = [cid for cid in (node["base_class_ids"] or []) if cid != asset_id]
-            all_neighbor_ids = set(node["upstream_ids"]) | set(node["downstream_ids"]) | set(parent_ids)
 
             neighbor_where = [
                 FunctionBranch.tenant_id == tenant_id,
@@ -910,8 +909,8 @@ class LineageRepository:
                 FunctionBranch.asset_id != asset_id,
             ]
             conditions = [FunctionBranch.base_class_ids.contains([asset_id])]
-            if all_neighbor_ids:
-                conditions.append(FunctionBranch.asset_id.in_(all_neighbor_ids))
+            if parent_ids:
+                conditions.append(FunctionBranch.asset_id.in_(parent_ids))
             neighbor_where.append(or_(*conditions))
 
             neighbor_result = await self._s.execute(
@@ -925,21 +924,17 @@ class LineageRepository:
                     FunctionBranch.repo_url,
                     FunctionBranch.branch,
                     FunctionBranch.base_class_ids,
-                    FunctionBranch.upstream_ids,
-                    FunctionBranch.downstream_ids,
                 )
                 .join(FunctionDef, _join)
                 .where(*neighbor_where)
             )
 
-            upstream_set = set(node["upstream_ids"])
-            downstream_set = set(node["downstream_ids"])
             parent_id_set = set(parent_ids)
             seen_callees: set = set()
             seen_callers: set = set()
             neighbor_rows = neighbor_result.all()
 
-            # Child counts (classes that inherit from each neighbor)
+            # Child counts (classes that directly subclass each neighbor)
             neighbor_ids = [r.asset_id for r in neighbor_rows]
             child_counts: Dict[str, int] = {}
             if neighbor_ids:
@@ -959,8 +954,6 @@ class LineageRepository:
 
             for r in neighbor_rows:
                 cross = r.repo != repo
-                r_upstream = set(r.upstream_ids or []) | set(r.base_class_ids or [])
-                r_downstream_count = len(r.downstream_ids or []) + child_counts.get(r.asset_id, 0)
                 base = {
                     "id": r.asset_id,
                     "node_type": "class",
@@ -970,26 +963,18 @@ class LineageRepository:
                     "end_lineno": r.end_lineno,
                     "source": None,
                     "class_id": None,
-                    "downstream_count": r_downstream_count,
-                    "upstream_count": len(r_upstream),
+                    "downstream_count": child_counts.get(r.asset_id, 0),
+                    "upstream_count": len(r.base_class_ids or []),
                     "is_cross_repo": cross,
                     "repo": r.repo,
                     "repo_url": r.repo_url,
                     "branch": r.branch,
                 }
-                if r.asset_id not in seen_callees:
-                    if r.asset_id in parent_id_set:
-                        seen_callees.add(r.asset_id)
-                        callees.append({**base, "relationship_type": "extends"})
-                    elif r.asset_id in upstream_set:
-                        seen_callees.add(r.asset_id)
-                        callees.append({**base, "relationship_type": "calls"})
-                if r.asset_id not in seen_callers:
-                    if asset_id in (r.base_class_ids or []):
-                        seen_callers.add(r.asset_id)
-                        callers.append({**base, "relationship_type": "extended_by"})
-                    elif r.asset_id in downstream_set:
-                        seen_callers.add(r.asset_id)
-                        callers.append({**base, "relationship_type": "calls"})
+                if r.asset_id not in seen_callees and r.asset_id in parent_id_set:
+                    seen_callees.add(r.asset_id)
+                    callees.append({**base, "relationship_type": "extends"})
+                if r.asset_id not in seen_callers and asset_id in (r.base_class_ids or []):
+                    seen_callers.add(r.asset_id)
+                    callers.append({**base, "relationship_type": "extended_by"})
 
         return {"node": node, "upstream": callees, "downstream": callers, "methods": methods}
