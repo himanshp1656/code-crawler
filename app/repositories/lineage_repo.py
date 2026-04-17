@@ -501,12 +501,31 @@ class LineageRepository:
     async def fetch_cross_repo_stubs(
         self, tenant_id: str, exclude_repo: str
     ) -> List[Dict[str, Any]]:
-        """Return one stub per unique function/class from every other repo in the tenant.
+        """Return function/class stubs from other repos (default branches only).
 
-        No default-branch requirement — just deduplicate by asset_id so the same
-        function appearing on multiple branches only shows up once.
+        Used during build_lineage to augment indexes so that self.method() /
+        super().method() calls can be resolved across repo boundaries.
         """
-        raw = await self._s.execute(
+        try:
+            settings_result = await self._s.execute(
+                select(RepoSettings.repo, RepoSettings.default_branch)
+                .where(RepoSettings.tenant_id == tenant_id)
+            )
+            default_branches = {r: b for r, b in settings_result.all()}
+        except Exception:
+            return []
+
+        other_repos = {r: b for r, b in default_branches.items() if r != exclude_repo}
+        if not other_repos:
+            return []
+
+        from sqlalchemy import and_
+        conditions = [
+            and_(FunctionBranch.repo == r, FunctionBranch.branch == b)
+            for r, b in other_repos.items()
+        ]
+
+        result = await self._s.execute(
             select(
                 FunctionBranch.asset_id,
                 FunctionDef.node_type,
@@ -518,24 +537,20 @@ class LineageRepository:
             .join(FunctionDef, FunctionBranch.def_id == FunctionDef.id)
             .where(
                 FunctionBranch.tenant_id == tenant_id,
-                FunctionBranch.repo != exclude_repo,
+                or_(*conditions),
             )
         )
-        seen: set = set()
-        stubs: List[Dict[str, Any]] = []
-        for r in raw.all():
-            if r.asset_id in seen:
-                continue
-            seen.add(r.asset_id)
-            stubs.append({
+        return [
+            {
                 "id": r.asset_id,
                 "node_type": r.node_type,
-                "name": r.name,           # qualname as stored (e.g. "BaseMetadataExtractor.upload")
+                "name": r.name,           # qualname as stored
                 "file": r.file_path or "",
                 "class_id": r.class_id,
                 "base_class_ids": r.base_class_ids or [],
-            })
-        return stubs
+            }
+            for r in result.all()
+        ]
 
     # ── Delete ─────────────────────────────────────────────────────────────
 

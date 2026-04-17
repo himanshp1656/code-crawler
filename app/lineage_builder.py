@@ -100,7 +100,6 @@ def _resolve_callee(
     class_name_index: Dict[str, List["ClassDefInfo"]],
     star_imports: Dict[str, List[str]],
     method_index: Dict[str, Dict[str, List[str]]],
-    class_method_lookup: Dict[str, List[str]],
 ) -> Optional[str]:
     """Best-effort resolution from call.func_expr to a function ID."""
     expr = call.func_expr
@@ -115,15 +114,9 @@ def _resolve_callee(
             return candidates[0].id
         return None
 
-    def _simple_class_name(raw: str) -> str:
-        """Extract the bare class name from either a raw name or a class ID (module:Name)."""
-        if ":" in raw:
-            raw = raw.split(":", 1)[1]   # "module:ClassName" → "ClassName"
-        return raw.rsplit(".", 1)[-1]    # "Outer.Inner" → "Inner"
-
-    def collect_ancestor_class_ids(start_class_id: str) -> List[str]:
-        """BFS through class_index returning all reachable ancestor class IDs in order."""
-        result: List[str] = []
+    def collect_ancestor_names(start_class_id: str) -> set:
+        """Walk base_classes fields (even unresolved) to collect all ancestor simple names."""
+        names: set = set()
         queue = [start_class_id]
         visited: set = set()
         while queue:
@@ -131,68 +124,78 @@ def _resolve_callee(
             if cid in visited:
                 continue
             visited.add(cid)
-            result.append(cid)
             cls_info = class_index.get(cid)
             if not cls_info:
                 continue
             cls_file = cls_info.file or file_result.path
             for base_name in cls_info.base_classes:
+                simple = base_name.rsplit(".", 1)[-1]
+                names.add(simple)
                 parent_id = _resolve_class(
                     base_name, cls_file, import_maps, class_index, class_name_index,
                 )
                 if parent_id and parent_id not in visited:
                     queue.append(parent_id)
-        return result
+        return names
 
-    def resolve_via_hierarchy(start_class_id: str, method_name: str, skip_self: bool = False) -> Optional[str]:
-        """Walk the full class hierarchy and look up ClassName.method_name in the
-        flat class_method_lookup for each ancestor in BFS order.
-        Falls back to method_index (same-repo BFS) and then unique global name.
-        """
-        ancestor_ids = collect_ancestor_class_ids(start_class_id)
-        if skip_self and ancestor_ids:
-            ancestor_ids = ancestor_ids[1:]  # super() — skip the class itself
-
-        # 1. Try class_method_lookup in hierarchy order (covers cross-repo)
-        for cid in ancestor_ids:
-            cls_info = class_index.get(cid)
-            if not cls_info:
+    def resolve_method_in_hierarchy(start_class_id: str, method_name: str) -> Optional[str]:
+        """BFS through the inheritance chain (including cross-repo bases) to find a method."""
+        queue = [start_class_id]
+        visited: set = set()
+        while queue:
+            cid = queue.pop(0)
+            if cid in visited:
                 continue
-            key = f"{cls_info.name}.{method_name}"
-            ids = class_method_lookup.get(key, [])
+            visited.add(cid)
+            ids = method_index.get(cid, {}).get(method_name, [])
             if len(ids) == 1:
                 return ids[0]
-
-        # 2. Also try with raw ancestor names from base_classes strings (handles
-        #    unresolved cross-repo parents whose class_index entry is missing)
-        seen_names: set = set()
-        for cid in collect_ancestor_class_ids(start_class_id):
             cls_info = class_index.get(cid)
-            if not cls_info:
-                continue
-            for base_raw in cls_info.base_classes:
-                simple = _simple_class_name(base_raw)
-                if simple in seen_names:
-                    continue
-                seen_names.add(simple)
-                ids = class_method_lookup.get(f"{simple}.{method_name}", [])
-                if len(ids) == 1:
-                    return ids[0]
+            if cls_info:
+                # Use the file where THIS class is defined, not the original call site.
+                cls_file = cls_info.file or file_result.path
+                for base_name in cls_info.base_classes:
+                    parent_id = _resolve_class(
+                        base_name, cls_file, import_maps,
+                        class_index, class_name_index,
+                    )
+                    if parent_id and parent_id not in visited:
+                        queue.append(parent_id)
+        return None
 
-        # 3. Unique global name fallback
+    def resolve_via_ancestor_names(start_class_id: str, method_name: str) -> Optional[str]:
+        """Fallback: filter name_index candidates by ancestor class names.
+
+        Handles the case where BFS can't fully resolve a parent (e.g. 'App' is
+        ambiguous), but the correct method is uniquely named within the known
+        ancestor class names.
+        """
+        ancestor_names = collect_ancestor_names(start_class_id)
+        own_info = class_index.get(start_class_id)
+        if own_info:
+            ancestor_names.add(own_info.name)
         candidates = name_index.get(method_name, [])
-        if len(candidates) == 1:
-            return candidates[0].id
+        matches = [fn for fn in candidates if fn.class_name and fn.class_name in ancestor_names]
+        if len(matches) == 1:
+            return matches[0].id
         return None
 
     parts = expr.split(".")
 
-    # ── Case 0: self.method() / cls.method() ─────────────────────────────────
+    # ── Case 0: self.method() / cls.method() — walk full inheritance chain ──
     if parts[0] in ("self", "cls") and len(parts) == 2:
         method_name = parts[1]
         caller = func_index.get(call.caller_id)
         if caller and caller.class_id:
-            return resolve_via_hierarchy(caller.class_id, method_name)
+            resolved = resolve_method_in_hierarchy(caller.class_id, method_name)
+            if resolved:
+                return resolved
+            # BFS may fail when a parent class name is ambiguous (e.g. "App").
+            # Fall back to filtering name_index by known ancestor class names.
+            resolved = resolve_via_ancestor_names(caller.class_id, method_name)
+            if resolved:
+                return resolved
+        # Last resort: unique global name
         candidates = name_index.get(method_name, [])
         if len(candidates) == 1:
             return candidates[0].id
@@ -206,12 +209,30 @@ def _resolve_callee(
             return candidates[0].id
         return None
 
-    # ── Case 0c: super().method() — skip self class, start from parents ──────
+    # ── Case 0c: super().method() — look in parent classes (+ cross-repo) ──
     if parts[0] == "super()" and len(parts) == 2:
         method_name = parts[1]
         caller = func_index.get(call.caller_id)
         if caller and caller.class_id:
-            return resolve_via_hierarchy(caller.class_id, method_name, skip_self=True)
+            cls_info = class_index.get(caller.class_id)
+            if cls_info:
+                for base_name in cls_info.base_classes:
+                    parent_id = _resolve_class(
+                        base_name, file_result.path, import_maps,
+                        class_index, class_name_index,
+                    )
+                    if parent_id:
+                        resolved = resolve_method_in_hierarchy(parent_id, method_name)
+                        if resolved:
+                            return resolved
+            # BFS may fail due to ambiguous parent names — try ancestor-name filter.
+            resolved = resolve_via_ancestor_names(caller.class_id, method_name)
+            if resolved:
+                return resolved
+            # Last resort: unique global name
+            candidates = name_index.get(method_name, [])
+            if len(candidates) == 1:
+                return candidates[0].id
         return None
 
     # ── Case 1: simple name "foo" ────────────────────────────────────────────
@@ -416,14 +437,6 @@ def build_lineage(
                 class_name_index.setdefault(cls.name, []).append(cls)
         logger.info("build_lineage: augmented indexes with %d cross-repo stubs", len(cross_repo_stubs))
 
-    # Build flat ClassName.method_name → [func_id] lookup across ALL functions
-    # (current repo + cross-repo). Used in resolve_via_hierarchy for self/super calls.
-    class_method_lookup: Dict[str, List[str]] = {}
-    for fn in func_index.values():
-        if fn.class_name:
-            key = f"{fn.class_name}.{fn.name}"
-            class_method_lookup.setdefault(key, []).append(fn.id)
-
     assets: Dict[str, dict] = {}
     downstream_sets: Dict[str, set] = {}
     upstream_sets: Dict[str, set] = {}
@@ -497,7 +510,6 @@ def build_lineage(
             callee_id = _resolve_callee(
                 call, fr, func_index, name_index, import_maps,
                 class_index, class_name_index, star_imports, method_index,
-                class_method_lookup,
             )
             if not callee_id:
                 continue
