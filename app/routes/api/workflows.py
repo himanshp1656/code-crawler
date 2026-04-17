@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import select, delete
+from sqlalchemy import func, select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
@@ -52,7 +52,7 @@ async def insert_crawl_job(
         triggered_by=triggered_by,
     ).on_conflict_do_update(
         index_elements=["workflow_id"],
-        set_={"triggered_by": triggered_by, "user_id": user_id},
+        set_={"triggered_by": triggered_by, "user_id": user_id, "started_at": func.now()},
     )
     await session.execute(stmt)
 
