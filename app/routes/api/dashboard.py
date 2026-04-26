@@ -20,6 +20,8 @@ from app.workflow import TASK_QUEUE, CodeCrawlerWorkflow
 
 router = APIRouter()
 
+REPO_LIMITS = {"organization": 5, "personal": 3}
+
 
 async def _get_user(request: Request, session: AsyncSession):
     user_id = request.session.get("user_id")
@@ -72,10 +74,13 @@ async def dashboard_data(
         }
         for repo, branches in repo_map.items()
     ]
+    account_type = tenant.account_type if tenant else "personal"
+    repo_limit = REPO_LIMITS.get(account_type, 3)
     return {
         "tenant_id": user.tenant_id,
         "tenant_name": tenant.tenant_name if tenant else user.tenant_id,
-        "account_type": tenant.account_type if tenant else "personal",
+        "account_type": account_type,
+        "repo_limit": repo_limit,
         "repos": repos,
         "users": [
             {"id": u.id, "username": u.username, "is_active": u.is_active}
@@ -121,6 +126,21 @@ async def crawl(
     session: AsyncSession = Depends(get_session),
 ):
     user = await _get_user(request, session)
+
+    tenant_repo = TenantRepository(session)
+    tenant = await tenant_repo.get_by_id(user.tenant_id)
+    account_type = tenant.account_type if tenant else "personal"
+    limit = REPO_LIMITS.get(account_type, 3)
+
+    lineage_repo = LineageRepository(session)
+    repo_name = normalize_repo_name(body.github_repo_url)
+    existing_repos = await lineage_repo.list_distinct_repo_names(user.tenant_id)
+    if repo_name not in existing_repos and len(existing_repos) >= limit:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Repo limit reached. {account_type.capitalize()} accounts can crawl up to {limit} repos. Delete an existing repo to add a new one.",
+        )
+
     client = request.app.state.temporal_client
     assert client is not None, "Temporal client not initialised"
     wf_id = f"code-crawler-{user.tenant_id}-{body.branch}-{body.github_repo_url.rsplit('/', 1)[-1]}"
@@ -130,7 +150,6 @@ async def crawl(
         id=wf_id,
         task_queue=TASK_QUEUE,
     )
-    repo_name = normalize_repo_name(body.github_repo_url)
     await insert_crawl_job(session, tenant_id=user.tenant_id, user_id=user.id,
         workflow_id=handle.id, repo=repo_name, branch=body.branch, triggered_by=user.username)
     await session.commit()
@@ -177,9 +196,22 @@ async def crawl_local(
 ):
     user = await _get_user(request, session)
 
+    safe_name = folder_name.replace(" ", "-").lower()
+
+    tenant_repo_obj = TenantRepository(session)
+    tenant_obj = await tenant_repo_obj.get_by_id(user.tenant_id)
+    account_type = tenant_obj.account_type if tenant_obj else "personal"
+    limit = REPO_LIMITS.get(account_type, 3)
+    lineage_repo_obj = LineageRepository(session)
+    existing_repos = await lineage_repo_obj.list_distinct_repo_names(user.tenant_id)
+    if safe_name not in existing_repos and len(existing_repos) >= limit:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Repo limit reached. {account_type.capitalize()} accounts can crawl up to {limit} repos. Delete an existing repo to add a new one.",
+        )
+
     # Save uploaded files into output/repos/{folder}-{branch}/ — same location
     # clone_repo_activity uses, so run-in-repo can find and execute them.
-    safe_name = folder_name.replace(" ", "-").lower()
     repo_dir = Path("output") / "repos" / f"{safe_name}-{branch}"
     repo_dir.mkdir(parents=True, exist_ok=True)
     for upload in files:

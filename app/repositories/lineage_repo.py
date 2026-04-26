@@ -251,6 +251,13 @@ class LineageRepository:
 
     # ── Simple lookups ─────────────────────────────────────────────────────
 
+    async def list_distinct_repo_names(self, tenant_id: str) -> set:
+        result = await self._s.execute(
+            select(distinct(FunctionBranch.repo))
+            .where(FunctionBranch.tenant_id == tenant_id)
+        )
+        return {row[0] for row in result.all()}
+
     async def list_branches_for_repo(self, tenant_id: str, repo: str) -> List[str]:
         result = await self._s.execute(
             select(distinct(FunctionBranch.branch))
