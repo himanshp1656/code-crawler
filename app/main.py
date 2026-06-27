@@ -13,7 +13,9 @@ from temporalio.client import Client
 
 from app.db import configure as configure_db, get_session_context
 from app.repositories.admin_repo import AdminRepository
+from app.repositories.tenant_repo import TenantRepository
 from app.routes import include_routers
+from app.showcase_config import SHOWCASE_ENABLED, SHOWCASE_TENANT_ID, SHOWCASE_TENANT_NAME
 
 DEFAULT_ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 DEFAULT_ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
@@ -29,6 +31,12 @@ async def lifespan(app: FastAPI):
     async with get_session_context() as session:
         admin_repo = AdminRepository(session)
         await admin_repo.upsert(DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_PASSWORD)
+        if SHOWCASE_ENABLED and not await TenantRepository(session).exists(SHOWCASE_TENANT_ID):
+            await TenantRepository(session).create(
+                SHOWCASE_TENANT_ID,
+                SHOWCASE_TENANT_NAME,
+                account_type="organization",
+            )
         await session.commit()
 
     yield

@@ -41,6 +41,8 @@ RESERVED_HANDLES = frozenset(
         "create",
         "explore",
         "search",
+        "showcase",
+        "demo",
         "www",
         "app",
         "auth",
