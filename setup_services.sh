@@ -95,7 +95,7 @@ echo "$TEMPORAL_UI_PASSWORD" | sudo htpasswd -i -c /etc/nginx/temporal_htpasswd 
 
 sudo tee /etc/nginx/sites-available/temporal << EOF
 server {
-    listen 8233;
+    listen 8234;
     server_name $DOMAIN_NAME;
 
     auth_basic "Temporal UI";
@@ -111,5 +111,5 @@ EOF
 sudo ln -sf /etc/nginx/sites-available/temporal /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl restart nginx
 
-echo "Temporal UI configured at http://$DOMAIN_NAME:8233"
+echo "Temporal UI configured at http://$DOMAIN_NAME:8234"
 
