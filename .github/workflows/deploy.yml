@@ -12,11 +12,12 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
-          username: ubuntu
+          username: ${{ secrets.VPS_USERNAME || 'ubuntu' }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             set -e
-            cd /home/ubuntu/code-crawler
+            PROJECT_PATH="${{ secrets.VPS_PROJECT_PATH || '/home/ubuntu/code-crawler' }}"
+            cd "$PROJECT_PATH"
 
             git pull origin master
 

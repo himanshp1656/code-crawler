@@ -36,49 +36,42 @@ Browser
 
 | Component | Service | Spec |
 |-----------|---------|------|
-| Backend server | AWS EC2 | t3.micro, Ubuntu 24.04, ap-south-1 |
-| Database | AWS RDS | PostgreSQL, db.t3.micro, 20 GB gp2, ap-south-1 |
+| Backend server | VPS Hosting (e.g., DigitalOcean, Hetzner, Linode) | 1-2 vCPU, 1-2 GB RAM, Ubuntu 24.04 |
+| Database | PostgreSQL | Local VPS instance OR external managed service (e.g. Vercel Postgres, Supabase, Neon) |
 | Frontend | Netlify | Free tier, auto-deploy from GitHub |
 | SSL | Let's Encrypt | certbot, auto-renew |
-| Domain | `api.jiofibre.in` | A record → EC2 public IP |
+| Domain | `api.jiofibre.in` | A record → VPS public IP |
 
 ---
 
-## One-Time EC2 Setup
+## One-Time VPS Setup
 
-### 1. Launch EC2
-
-- AMI: Ubuntu 24.04 LTS (x86_64)
-- Instance type: t3.micro
-- Storage: 30 GB gp3
-- Security group inbound rules:
-  - SSH (22) — your IP only (or 0.0.0.0/0 if using GitHub Actions deploy)
-  - HTTP (80) — 0.0.0.0/0
-  - HTTPS (443) — 0.0.0.0/0
-  - Custom TCP 8234 — 0.0.0.0/0 (Temporal UI)
+### 1. Launch VPS
+- OS: Ubuntu 24.04 LTS
+- Firewall / Ports open:
+  - SSH (22)
+  - HTTP (80)
+  - HTTPS (443)
+  - Custom TCP 8233 / 8234 (Temporal UI)
 
 ### 2. SSH into the instance
-
 ```bash
-ssh -i ~/Downloads/your-key.pem ubuntu@<EC2_PUBLIC_IP>
+ssh <username>@<VPS_PUBLIC_IP>
 ```
 
-### 3. Install dependencies
-
+### 3. Install system dependencies
 ```bash
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y git nginx python3 python3.12-venv python3-pip
 ```
 
 ### 4. Install Temporal CLI
-
 ```bash
 curl -sSf https://temporal.download/cli.sh | sh
 # binary lands at ~/.temporalio/bin/temporal
 ```
 
 ### 5. Clone repo and set up Python
-
 ```bash
 git clone https://github.com/himanshp1656/code-crawler.git
 cd code-crawler
@@ -87,109 +80,94 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 6. Create .env file
+### 6. Set up the Database (PostgreSQL)
 
+Choose **Option A** (local hosting on the VPS) or **Option B** (external managed db).
+
+#### Option A: Local PostgreSQL Setup
+If hosting Postgres directly on the VPS:
+```bash
+# 1. Install Postgres
+sudo apt install -y postgresql postgresql-contrib
+
+# 2. Start and enable service
+sudo systemctl enable postgresql --now
+
+# 3. Create database and user (change 'secure_password' to something strong)
+sudo -u postgres psql -c "CREATE DATABASE code_crawler;"
+sudo -u postgres psql -c "CREATE USER postgres WITH PASSWORD 'secure_password';"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE code_crawler TO postgres;"
+```
+Your `POSTGRES_DSN` will be:
+`postgresql+asyncpg://postgres:secure_password@localhost:5432/code_crawler`
+
+#### Option B: External PostgreSQL Setup (Vercel, Supabase, Neon)
+1. Create a PostgreSQL database on your chosen provider.
+2. Note the database connection URL (ensure it uses `postgresql+asyncpg://` protocol for SQLAlchemy).
+
+### 7. Create .env file
 ```bash
 cat > .env << 'EOF'
-POSTGRES_DSN=postgresql+asyncpg://postgres:<password>@<rds-endpoint>:5432/code_crawler
+POSTGRES_DSN=postgresql+asyncpg://<username>:<password>@<host>:5432/<database>
 SESSION_SECRET_KEY=<random-secret>
-ADMIN_USERNAME=admin
+ADMIN_USERNAME=<your-admin-username>
 ADMIN_PASSWORD=<your-admin-password>
 FRONTEND_URL=https://code-crawler-frontend.netlify.app
+PAT_SECRET_KEY=<your-secret-pat-key>
+TEMPORAL_UI_USER=<username-for-temporal-ui>
+TEMPORAL_UI_PASSWORD=<password-for-temporal-ui>
 EOF
 ```
 
-### 7. Run database migrations
-
+### 8. Run database migrations
 ```bash
 set -a && source .env && set +a
 alembic upgrade head
 ```
 
-### 8. Set up systemd services + Nginx
-
+### 9. Set up systemd services + Nginx
 ```bash
 chmod +x setup_services.sh
+# You can optionally set DOMAIN_NAME before running:
+# export DOMAIN_NAME=api.yourdomain.com
 ./setup_services.sh
 ```
 
-This creates three systemd services:
+This dynamically detects your logged-in username and project path, creating three systemd services:
 - `temporal.service` — Temporal dev server with SQLite persistence
 - `code-crawler-worker.service` — Temporal activity worker
 - `code-crawler-app.service` — FastAPI via uvicorn on port 8000
 
 And configures Nginx:
 - Reverse proxy from port 80 → uvicorn :8000
-- Password-protected Temporal UI on port 8234
+- Password-protected Temporal UI on port 8233
 
-### 9. Set up SSL with Let's Encrypt
-
+### 10. Set up SSL with Let's Encrypt
 ```bash
 sudo apt install -y certbot python3-certbot-nginx
 sudo certbot --nginx -d api.jiofibre.in
 ```
 
-### 10. Update Nginx config for SSL
-
+### 11. Update Nginx config for SSL
 Copy the contents of `nginx.conf` (in repo root) to `/etc/nginx/sites-available/code-crawler`:
-
 ```bash
 sudo cp nginx.conf /etc/nginx/sites-available/code-crawler
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-The config redirects HTTP → HTTPS and proxies all traffic to uvicorn:
-
-```nginx
-server {
-    listen 80;
-    server_name api.jiofibre.in;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl;
-    server_name api.jiofibre.in;
-
-    ssl_certificate /etc/letsencrypt/live/api.jiofibre.in/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/api.jiofibre.in/privkey.pem;
-
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-}
-```
-
----
-
-## One-Time RDS Setup
-
-1. Create a PostgreSQL RDS instance (db.t3.micro, 20 GB gp2) in ap-south-1
-2. Set master username/password
-3. Make sure the EC2 security group can reach the RDS security group on port 5432
-4. Use the RDS endpoint in `POSTGRES_DSN`
-
 ---
 
 ## CI/CD — Backend (GitHub Actions)
 
-Every push to `master` on `himanshp1656/code-crawler` automatically deploys to EC2.
+Every push to `master` on `himanshp1656/code-crawler` automatically deploys to the VPS.
 
-**Required GitHub Secrets:**
-| Secret | Value |
-|--------|-------|
-| `EC2_HOST` | EC2 public IP (e.g. `13.206.97.236`) |
-| `EC2_SSH_KEY` | Contents of the `.pem` private key |
-
-**Deploy pipeline** (`.github/workflows/deploy.yml`):
-1. SSH into EC2
-2. `git pull origin master`
-3. `pip install -r requirements.txt`
-4. Source `.env` then `alembic upgrade head`
-5. `sudo systemctl restart code-crawler-worker code-crawler-app`
+**Required GitHub Secrets / Variables:**
+| Secret / Variable | Description | Default |
+|-------------------|-------------|---------|
+| `EC2_HOST` | VPS public IP | |
+| `EC2_SSH_KEY` | Contents of the SSH private key | |
+| `VPS_USERNAME` (Optional Var) | SSH login username | `ubuntu` |
+| `VPS_PROJECT_PATH` (Optional Var) | Path to repository on VPS | `/home/ubuntu/code-crawler` |
 
 ---
 
@@ -197,32 +175,15 @@ Every push to `master` on `himanshp1656/code-crawler` automatically deploys to E
 
 Every push to `main` on `himanshp1656/code-crawler-frontend` triggers a Netlify build.
 
-**Netlify build settings:**
-- Build command: `npm run build`
-- Publish directory: `dist`
-
 **Required Netlify environment variable:**
 | Variable | Value |
 |----------|-------|
 | `VITE_API_BASE_URL` | `https://api.jiofibre.in` |
 
-**Setup:** Netlify dashboard → Site configuration → Build & deploy → Link repository → connect `himanshp1656/code-crawler-frontend`.
-
 ---
 
 ## Cross-Domain Session Cookies
-
-The frontend (Netlify) and backend (EC2) are on different domains, so session cookies require:
-
-```python
-# app/main.py
-SessionMiddleware(
-    same_site="none",   # allow cross-site cookies
-    https_only=True,    # requires HTTPS on both ends
-)
-```
-
-This only works when both frontend and backend are on HTTPS.
+The frontend (Netlify) and backend (VPS) are on different domains, so session cookies require `same_site="none"` and `https_only=True` in `app/main.py`. This requires HTTPS to be set up on both sides.
 
 ---
 
@@ -238,12 +199,6 @@ sudo journalctl -u code-crawler-worker -f
 
 # Restart all services
 sudo systemctl restart temporal code-crawler-worker code-crawler-app
-
-# Run migrations manually
-cd /home/ubuntu/code-crawler
-source .venv/bin/activate
-set -a && source .env && set +a
-alembic upgrade head
 ```
 
 ## URLs
@@ -252,4 +207,4 @@ alembic upgrade head
 |---------|-----|
 | Frontend | https://code-crawler-frontend.netlify.app |
 | Backend API | https://api.jiofibre.in |
-| Temporal UI | http://api.jiofibre.in:8234 (basic auth) |
+| Temporal UI | http://api.jiofibre.in:8233 (basic auth protected) |
